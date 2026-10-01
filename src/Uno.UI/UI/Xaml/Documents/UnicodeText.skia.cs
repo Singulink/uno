@@ -154,12 +154,12 @@ internal readonly partial struct UnicodeText : IParsedText
 
 			var currentFontDetails = inline.FontInfo;
 			int currentScript = 0;
-			for (var i = 0; i < inlineText.Length; i += char.IsSurrogate(inlineText, i) ? 2 : 1)
+			for (int i = 0, codepointLength; i < inlineText.Length; i += codepointLength)
 			{
 				FontDetails newFontDetails;
-				var codepoint = char.ConvertToUtf32(inlineText, i);
+				var codepoint = ReadCodepoint(inlineText, i, out codepointLength);
 
-				var newScript = ICU.GetMethod<ICU.uscript_getScript>()(char.ConvertToUtf32(inlineText, i), out var errorCode);
+				var newScript = ICU.GetMethod<ICU.uscript_getScript>()(codepoint, out var errorCode);
 				ICU.CheckErrorCode<ICU.uscript_getScript>(errorCode);
 
 				if (newScript != currentScript)
@@ -1494,6 +1494,20 @@ internal readonly partial struct UnicodeText : IParsedText
 		}
 
 		return null;
+	}
+
+	// An inline boundary (e.g. a formatting change) can split a surrogate pair, so a lone surrogate is read as
+	// its own code unit instead of throwing.
+	private static int ReadCodepoint(string text, int index, out int length)
+	{
+		if (char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+		{
+			length = 2;
+			return char.ConvertToUtf32(text[index], text[index + 1]);
+		}
+
+		length = 1;
+		return text[index];
 	}
 
 	private static unsafe void AppendBoundaries(int boundaryType, string text, int outputBaseOffset, List<int> list)
