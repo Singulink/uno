@@ -3,6 +3,7 @@ using Foundation;
 using Microsoft.UI.Xaml;
 using UIKit;
 using Uno.UI.Xaml.Controls;
+using Windows.ApplicationModel.Activation;
 
 namespace Uno.UI.Runtime.Skia.AppleUIKit;
 
@@ -37,6 +38,48 @@ internal sealed class UnoUISceneDelegate : UISceneDelegate
 			{
 				_scene = windowScene;
 				NativeWindowWrapper.OnSceneConnected(windowScene);
+			}
+		}
+		catch (Exception ex)
+		{
+			// A managed exception must never escape into a UIKit callback.
+			Application.Current?.RaiseRecoverableUnhandledException(ex);
+		}
+
+		try
+		{
+			// After the scene is known, so that a window the app creates in OnActivated is attached to it.
+			AppleUIKitActivation.ReportConnection(connectionOptions);
+		}
+		catch (Exception ex)
+		{
+			// A managed exception must never escape into a UIKit callback.
+			Application.Current?.RaiseRecoverableUnhandledException(ex);
+		}
+	}
+
+	[Export("scene:continueUserActivity:")]
+	public override void ContinueUserActivity(UIScene scene, NSUserActivity userActivity)
+	{
+		try
+		{
+			AppleUIKitActivation.TryReportUserActivity(userActivity, ApplicationExecutionState.Running);
+		}
+		catch (Exception ex)
+		{
+			// A managed exception must never escape into a UIKit callback.
+			Application.Current?.RaiseRecoverableUnhandledException(ex);
+		}
+	}
+
+	[Export("scene:openURLContexts:")]
+	public override void OpenUrlContexts(UIScene scene, NSSet<UIOpenUrlContext> urlContexts)
+	{
+		try
+		{
+			foreach (var urlContext in urlContexts)
+			{
+				AppleUIKitActivation.TryReportUrl(urlContext.Url, ApplicationExecutionState.Running);
 			}
 		}
 		catch (Exception ex)
