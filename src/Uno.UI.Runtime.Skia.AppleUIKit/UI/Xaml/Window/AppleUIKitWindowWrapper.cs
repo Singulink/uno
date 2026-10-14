@@ -25,6 +25,8 @@ namespace Uno.UI.Xaml.Controls;
 
 internal class NativeWindowWrapper : NativeWindowWrapperBase
 {
+	private static UIWindowScene? _scene;
+
 	private AppleUIKitWindow _nativeWindow;
 
 	private RootViewController _mainController;
@@ -40,6 +42,12 @@ internal class NativeWindowWrapper : NativeWindowWrapperBase
 	{
 		Instance ??= this;
 		_nativeWindow = new();
+
+		// An app creating its window after launch finds the application scene already connected.
+		if (Instance == this && _scene is { } scene)
+		{
+			AttachToScene(scene);
+		}
 
 		_mainController = new RootViewController();
 		_mainController.SetXamlRoot(xamlRoot);
@@ -85,6 +93,57 @@ internal class NativeWindowWrapper : NativeWindowWrapperBase
 	public static NativeWindowWrapper? Instance { get; private set; }
 
 	public override AppleUIKitWindow NativeWindow => _nativeWindow;
+
+	/// <summary>
+	/// Shows the app's window in the application scene UIKit connected.
+	/// </summary>
+	/// <remarks>
+	/// UIKit connects the first scene after <c>FinishedLaunching</c>, so a window the app created while
+	/// launching is attached here, and one it creates later is attached when it is constructed.
+	/// </remarks>
+	internal static void OnSceneConnected(UIWindowScene scene)
+	{
+		_scene = scene;
+		Instance?.AttachToScene(scene);
+	}
+
+	/// <summary>
+	/// Forgets a disconnected scene but keeps the window.
+	/// </summary>
+	/// <remarks>
+	/// UIKit can disconnect a background scene to reclaim memory and connect a new one when the user comes
+	/// back, without ending the process. The window then moves to that new scene.
+	/// </remarks>
+	internal static void OnSceneDisconnected(UIScene scene)
+	{
+		if (scene.Equals(_scene))
+		{
+			_scene = null;
+		}
+	}
+
+	private void AttachToScene(UIWindowScene scene)
+	{
+		if (this.Log().IsEnabled(LogLevel.Debug))
+		{
+			this.Log().Debug($"Attaching the window to scene {scene.Session.PersistentIdentifier}.");
+		}
+
+		_nativeWindow.WindowScene = scene;
+		_nativeWindow.Frame = scene.CoordinateSpace.Bounds;
+
+		// A window already showing the extended splash screen or the app's content has to be made key
+		// again to appear in the scene. Otherwise ShowCore shows it later.
+		if (_nativeWindow.RootViewController is not null)
+		{
+			_nativeWindow.MakeKeyAndVisible();
+		}
+	}
+
+	/// <summary>
+	/// Tells whether a scene is the one the window is in. Before the window has a scene, every scene counts.
+	/// </summary>
+	internal static bool IsWindowScene(UIScene scene) => _scene is null || _scene.Equals(scene);
 
 	private void DispatchDpiChanged() =>
 		RasterizationScale = (float)_displayInformation.RawPixelsPerViewPixel;
