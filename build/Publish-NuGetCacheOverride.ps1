@@ -22,6 +22,8 @@ afterwards.
 Visual Studio and running dev servers can stay open. Files they keep loaded (the build tasks, the dev server host) are moved
 aside and replaced, and they use the new ones once restarted; the script names what to restart when that happens.
 
+See Custom-Uno-Build.md next to this script for setting up a machine, working on the custom build and troubleshooting.
+
 .EXAMPLE
 build\Publish-NuGetCacheOverride.ps1
 
