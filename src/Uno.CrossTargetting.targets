@@ -151,8 +151,9 @@
 			<_UnoOverrideTargetFramework Condition="'$(_UnoOverrideAndroidFolders)'!='' and !$(_UnoOverrideAndroidFolders.Contains(';'))">$([System.IO.Path]::GetFileName('$(_UnoOverrideAndroidFolders)'))</_UnoOverrideTargetFramework>
 
 			<_UnoOverrideLibFolder>$(_UnoOverridePackageFolder)\lib\$(_UnoOverrideTargetFramework)</_UnoOverrideLibFolder>
+			<!-- A runtime-specific build goes to uno-runtime, or to lib in packages made for one runtime (Uno.WinUI.MediaPlayer.Skia.X11). -->
 			<_UnoOverrideRuntimeFolder>$(_UnoOverrideLibFolder)</_UnoOverrideRuntimeFolder>
-			<_UnoOverrideRuntimeFolder Condition="'$(UnoRuntimeIdentifier)'!='' and '$(UnoRuntimeIdentifier)'!='Reference'">$(_UnoOverridePackageFolder)\uno-runtime\$(TargetFramework)\$(UnoRuntimeIdentifier.ToLower())</_UnoOverrideRuntimeFolder>
+			<_UnoOverrideRuntimeFolder Condition="'$(UnoRuntimeIdentifier)'!='' and '$(UnoRuntimeIdentifier)'!='Reference' and Exists('$(_UnoOverridePackageFolder)\uno-runtime')">$(_UnoOverridePackageFolder)\uno-runtime\$(TargetFramework)\$(UnoRuntimeIdentifier.ToLower())</_UnoOverrideRuntimeFolder>
 		</PropertyGroup>
 
 		<Message Importance="high"

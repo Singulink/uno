@@ -12,6 +12,8 @@
 		<RootNamespace>Uno.UI.Svg</RootNamespace>
 
 		<UnoRuntimeIdentifier>Skia</UnoRuntimeIdentifier>
+		<UseCommonOverridePackage>true</UseCommonOverridePackage>
+		<CommonOverridePackageId>Uno.WinUI.Svg</CommonOverridePackageId>
 		<PlatformItemsBasePath>.\</PlatformItemsBasePath>
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
@@ -26,22 +28,5 @@
 		<ProjectReference Include="..\..\Uno.UI\Uno.UI.Skia.csproj" />
 		<ProjectReference Include="..\Uno.WinUI.Graphics2DSK\Uno.WinUI.Graphics2DSK.Crossruntime.csproj" />
 	</ItemGroup>
-
-	<Target Name="_UnoUISvgOverrideNuget" AfterTargets="AfterBuild" DependsOnTargets="BuiltProjectOutputGroup" Condition="'$(UnoNugetOverrideVersion)'!=''">
-
-		<PropertyGroup>
-			<_OverrideTargetFramework>$(TargetFramework)</_OverrideTargetFramework>
-			<_TargetNugetFolder>$(NuGetPackageRoot)\uno.ui.svg\$(UnoNugetOverrideVersion)\uno-runtime\$(UnoRuntimeIdentifier.ToLowerInvariant())</_TargetNugetFolder>
-		</PropertyGroup>
-		<ItemGroup>
-			<_OutputFiles Include="$(TargetDir)**" />
-		</ItemGroup>
-		<MakeDir Directories="$(_TargetNugetFolder)" />
-
-		<Message Importance="high" Text="OVERRIDING NUGET PACKAGE CACHE: $(_TargetNugetFolder)" />
-
-		<Copy SourceFiles="@(_OutputFiles)" DestinationFiles="@(_OutputFiles->'$(_TargetNugetFolder)\%(RecursiveDir)%(Filename)%(Extension)')" />
-		<Copy SourceFiles="@(_OutputFilesPDB)" DestinationFiles="@(_OutputFilesPDB->'$(_TargetNugetFolder)\%(RecursiveDir)%(Filename).pdb')" />
-	</Target>
 
 </Project>
