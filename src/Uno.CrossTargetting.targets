@@ -141,8 +141,13 @@
 		<PropertyGroup>
 			<_OverrideTargetFramework>$(TargetFramework)</_OverrideTargetFramework>
 			
-			<!-- Current nuget publishing uses netX.0-android30.0 -->
-			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android'))">$(_OverrideTargetFramework)30.0</_OverrideTargetFramework>
+			<!--
+				The packages ship one Android folder per .NET version (net9.0-android30.0, net10.0-android36.0,
+				see Uno.WinRT.nuspec), so the build TFM needs the matching API suffix to hit the folder NuGet reads.
+			-->
+			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '9.0'">30.0</_OverrideAndroidApiLevel>
+			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '10.0'">36.0</_OverrideAndroidApiLevel>
+			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android')) AND '$(_OverrideAndroidApiLevel)' != ''">$(_OverrideTargetFramework)$(_OverrideAndroidApiLevel)</_OverrideTargetFramework>
 
 			<_overridePackageId>$(CommonOverridePackageId.ToLowerInvariant())</_overridePackageId>
 			<_overridePackageId Condition="'$(CommonOverridePackageId)'==''">$(AssemblyName.ToLowerInvariant())</_overridePackageId>
@@ -221,8 +226,13 @@
 		<PropertyGroup>
 			<_OverrideTargetFramework>$(TargetFramework)</_OverrideTargetFramework>
 
-			<!-- Current nuget publishing uses netX.0-android30.0 -->
-			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android'))">$(_OverrideTargetFramework)30.0</_OverrideTargetFramework>
+			<!--
+				The packages ship one Android folder per .NET version (net9.0-android30.0, net10.0-android36.0,
+				see Uno.WinRT.nuspec), so the build TFM needs the matching API suffix to hit the folder NuGet reads.
+			-->
+			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '9.0'">30.0</_OverrideAndroidApiLevel>
+			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '10.0'">36.0</_OverrideAndroidApiLevel>
+			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android')) AND '$(_OverrideAndroidApiLevel)' != ''">$(_OverrideTargetFramework)$(_OverrideAndroidApiLevel)</_OverrideTargetFramework>
 
 			<CommonOverridePackageId Condition="'$(CommonOverridePackageId)'==''">$(AssemblyName)</CommonOverridePackageId>
 			<CommonOverridePackageId>$(CommonOverridePackageId.ToLowerInvariant())</CommonOverridePackageId>
