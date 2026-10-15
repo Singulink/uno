@@ -33,7 +33,7 @@ build\Publish-NuGetCacheOverride.ps1 -VerifyOnly
 [CmdletBinding()]
 param(
 	# Branch or commit to build.
-	[string]$Ref = 'dev/mikernet/68-dropdoc',
+	[string]$Ref = 'custom/6.8',
 
 	# Version of the Uno packages the apps restore.
 	[string]$Version = '6.8.0-dev.212',
@@ -301,7 +301,22 @@ $checked = @{
 	'uno.winui.runtime.skia.appleuikit' = @('lib\net9.0-ios18.0')
 }
 
+# An assembly built from an earlier commit is still current when nothing under src changed since, so commits that only
+# touch this script or documentation don't call for another publish.
+$sameSource = @{ $shortCommit = $true }
+function Test-SameSource([string]$Built) {
+	if (-not $sameSource.ContainsKey($Built)) {
+		$previous = $ErrorActionPreference
+		$ErrorActionPreference = 'Continue'
+		try { & git -C $repoRoot diff --quiet $Built $commit -- src 2>$null | Out-Null }
+		finally { $ErrorActionPreference = $previous }
+		$sameSource[$Built] = $LASTEXITCODE -eq 0
+	}
+	return $sameSource[$Built]
+}
+
 $current = 0
+$currentCommits = New-Object System.Collections.Generic.HashSet[string]
 $original = New-Object System.Collections.Generic.List[string]
 $stale = New-Object System.Collections.Generic.List[string]
 
@@ -322,14 +337,18 @@ foreach ($folder in Get-ChildItem $cache -Directory -Filter 'uno*' | ForEach-Obj
 			$built = $Matches[1]
 			$name = "$id\$subfolder\$($dll.Name)"
 
-			if ($built -eq $shortCommit) { $current++ }
-			elseif ($built -eq $originalCommit) { $original.Add($name) }
+			if ($built -eq $originalCommit) { $original.Add($name) }
+			elseif (Test-SameSource $built) { $current++; $currentCommits.Add($built) | Out-Null }
 			else { $stale.Add("$name ($built)") }
 		}
 	}
 }
 
-Write-Host "$current assemblies built from $shortCommit."
+$builtFrom = $shortCommit
+if (@($currentCommits | Where-Object { $_ -ne $shortCommit }).Count) {
+	$builtFrom = "$(@($currentCommits) -join ', ') (the same source as $shortCommit)"
+}
+Write-Host "$current assemblies built from $builtFrom."
 if ($original.Count) {
 	Write-Host "$($original.Count) still the package's own (no override reaches them; fine while the fork leaves their source alone):"
 	$original | Sort-Object | ForEach-Object { Write-Host "  $_" }

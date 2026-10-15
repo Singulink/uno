@@ -2,8 +2,8 @@
 
 Our apps run on a custom build of Uno Platform 6.8. It contains fixes they need that Uno hasn't released yet. This document explains how the custom build reaches the apps, how to set it up on your machine, and how to work on it.
 
-- **Repository:** <https://github.com/mikernet/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
-- **Branch:** `dev/mikernet/68-dropdoc`
+- **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
+- **Branch:** `custom/6.8`
 - **Based on:** the official Uno.WinUI `6.8.0-dev.212`, which is commit `06d268cb3b` on Uno's `servicing/6.8` branch
 - **Publish script:** [`build/Publish-NuGetCacheOverride.ps1`](Publish-NuGetCacheOverride.ps1)
 
@@ -36,7 +36,7 @@ This has consequences:
 1. **Clone the fork** on the custom build's branch, anywhere you like:
 
    ```powershell
-   git clone --branch dev/mikernet/68-dropdoc https://github.com/mikernet/uno.git C:\src\uno
+   git clone --branch custom/6.8 https://github.com/Singulink/uno.git C:\src\uno
    ```
 
 2. **Restore the apps you work on** with every platform they target. For example, open the solution in Visual Studio, or run `dotnet restore` on it. The script only overwrites packages that are already in the cache. Packages that get restored later stay stock until you publish again, such as when you first build for iOS or when an app starts using a new Uno feature. See [When to publish again](#when-to-publish-again).
@@ -62,7 +62,7 @@ A successful run ends like this:
   uno.winui\lib\net10.0\Uno.Xaml.dll
   uno.winui\uno-runtime\net10.0\skia\Uno.Xaml.dll
 
-The NuGet cache has dev/mikernet/68-dropdoc (f834cbef72). Rebuild the apps to pick it up.
+The NuGet cache has custom/6.8 (f834cbef72). Rebuild the apps to pick it up.
 ```
 
 The script exits with code 0 on success and 1 if anything failed. On failure it prints a `Not done:` list.
@@ -71,7 +71,7 @@ The script exits with code 0 on success and 1 if anything failed. On failure it 
 
 Run the script again when any of these happens:
 
-- New commits land on `dev/mikernet/68-dropdoc`. The script builds the branch as it is in your clone, so run `git -C C:\src\uno pull` first.
+- New commits land on `custom/6.8`. The script builds the branch as it is in your clone, so run `git -C C:\src\uno pull` first.
 - You restored a platform or an app for the first time after the last publish, such as a first iOS build.
 - The NuGet cache was cleared.
 - The script's check reports assemblies that weren't rebuilt (see [Troubleshooting](#troubleshooting)).
@@ -92,7 +92,7 @@ Publish-NuGetCacheOverride.ps1 [-Ref <branch or commit>] [-Version <package vers
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `-Ref` | `dev/mikernet/68-dropdoc` | Branch or commit to build, as it is in your clone. |
+| `-Ref` | `custom/6.8` | Branch or commit to build, as it is in your clone. |
 | `-Version` | `6.8.0-dev.212` | Version of the Uno packages the apps restore. It must match what the apps' `Uno.Sdk` resolves to. |
 | `-Worktree` | `uno-68-publish` next to your clone | Folder the build runs in. |
 | `-VerifyOnly` | off | Only tidy and check the cache, without building. |
@@ -124,7 +124,7 @@ The script also passes `-p:NuGetAudit=false`. Uno treats NuGet vulnerability war
 
 **4. The check.** For every Uno package at that version in the cache, the script looks at the folders that Skia apps on desktop, WebAssembly, Android and iOS load assemblies from. It sorts each `Uno*.dll` by the commit it was built from, using the commit embedded in its product version:
 
-- **Built from the published commit:** correct.
+- **Built from the published commit:** correct. So is an earlier commit with the same `src`, which means commits that only change documentation or this script don't call for another publish.
 - **Still the package's own build:** no override reaches it. That is harmless as long as the fork doesn't change that assembly's source. Today that covers `Uno.Xaml`, `Uno.Analyzers`, and the native WebAssembly renderer, which Skia apps don't use.
 - **Built from another commit:** a stale leftover, which makes the run fail.
 
@@ -154,14 +154,14 @@ The script rebuilds the whole set from one commit and verifies the result, so mi
 
 ## Working on the custom build
 
-- **Where changes go:** commit to a branch off `dev/mikernet/68-dropdoc` and open a pull request against `dev/mikernet/68-dropdoc` in `mikernet/uno`. Fixes that also apply to Uno itself should be reported or proposed upstream in `unoplatform/uno` as well.
-- **Trying a change before it's merged:** commit it on your branch, then publish that branch with `-Ref`, for example `-Ref my-fix-branch`. The script only builds commits, so uncommitted changes need a commit first; a temporary one is fine. Publish `dev/mikernet/68-dropdoc` again when you're done, so your cache matches everyone else's.
+- **Where changes go:** commit to a branch off `custom/6.8` and open a pull request against `custom/6.8` in `Singulink/uno`. Fixes that also apply to Uno itself should be reported or proposed upstream in `unoplatform/uno` as well.
+- **Trying a change before it's merged:** commit it on your branch, then publish that branch with `-Ref`, for example `-Ref my-fix-branch`. The script only builds commits, so uncommitted changes need a commit first; a temporary one is fine. Publish `custom/6.8` again when you're done, so your cache matches everyone else's.
 - **Faster development builds:** to build and test inside the Uno repository itself, Uno's [building documentation](https://platform.uno/docs/articles/uno-development/building-uno-ui.html#building-unoui-for-a-single-target-platform) describes `src\crosstargeting_override.props`, which limits builds to one target framework. That file only affects your clone. The publish script ignores it because it builds in its own worktree.
 - **When an app moves to another Uno version:** the custom build only applies to the version given by `-Version`. If the apps' `Uno.Sdk` changes, the fork's branch has to be rebased onto that release and `-Version` updated to match.
 - **What the custom build contains:** see the branch's history on top of the official build. The commit subjects say what each fix does, and "(port)" marks backports of upstream changes.
 
   ```powershell
-  git -C C:\src\uno log --no-merges --oneline 06d268cb3b..dev/mikernet/68-dropdoc
+  git -C C:\src\uno log --no-merges --oneline 06d268cb3b..custom/6.8
   ```
 
   As of October 2026, it includes:
