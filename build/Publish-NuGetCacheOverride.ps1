@@ -147,8 +147,8 @@ if (-not $VerifyOnly) {
 				$project = $_
 				-not ($project -like '*.netcoremobile.csproj') -and -not ($Exclude | Where-Object { $project -like $_ })
 			})
-		$path = Join-Path $logs "$Name.slnf"
-		@{ solution = @{ path = '..\..\src\Uno.UI.slnx'; projects = $projects } } | ConvertTo-Json -Depth 4 | Set-Content $path -Encoding UTF8
+		$path = "artifacts\nuget-override\$Name.slnf"
+		@{ solution = @{ path = '..\..\src\Uno.UI.slnx'; projects = $projects } } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Worktree $path) -Encoding UTF8
 		return $path
 	}
 
