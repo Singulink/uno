@@ -210,8 +210,10 @@ if (-not $VerifyOnly) {
 
 	foreach ($step in $steps) {
 		Write-Step $step.Title
+		# NuGetAudit: Uno makes audit warnings errors, so a vulnerability published after the commit (in the dev server's
+		# dependencies, say) would stop a build of the same code that built before. Upstream's own updates bring the fixes.
 		$arguments = @('build', (Join-Path $Worktree $step.Target), '-c', 'Release', '-nologo', '-nodeReuse:false',
-			"-p:UnoNugetOverrideVersion=$Version", '-p:GeneratePackageOnBuild=false',
+			"-p:UnoNugetOverrideVersion=$Version", '-p:GeneratePackageOnBuild=false', '-p:NuGetAudit=false',
 			'-consoleLoggerParameters:ErrorsOnly', "-bl:$(Join-Path $logs "$($step.Name).binlog")")
 		if ($step.ContainsKey('Framework')) { $arguments += @('-f', $step.Framework) }
 
