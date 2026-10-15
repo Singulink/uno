@@ -177,7 +177,15 @@ internal class NativeWindowWrapper : NativeWindowWrapperBase
 
 	internal RootViewController MainController => _mainController;
 
-	internal void OnNativeVisibilityChanged(bool visible) => IsVisible = visible;
+	// Show sets IsVisible itself. Under the scene life cycle UIKit reports the scene entering the foreground
+	// at launch, before the window is shown; setting IsVisible then would keep Show from raising VisibilityChanged.
+	internal void OnNativeVisibilityChanged(bool visible)
+	{
+		if (WasShown)
+		{
+			IsVisible = visible;
+		}
+	}
 
 	internal void OnNativeActivated(CoreWindowActivationState state) => ActivationState = state;
 
