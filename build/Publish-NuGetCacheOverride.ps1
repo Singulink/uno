@@ -170,7 +170,7 @@ if (-not $VerifyOnly) {
 	# deleted once free.
 	$packageFolders = @(Get-ChildItem $cache -Directory -Filter 'uno*' | ForEach-Object { Join-Path $_.FullName $Version } | Where-Object { Test-Path $_ })
 	$movedAside = @()
-	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Filter *.dll) {
+	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Include *.dll, *.exe) {
 		try { [IO.File]::Open($file.FullName, 'Open', 'ReadWrite', 'None').Dispose() }
 		catch {
 			$aside = "$($file.FullName).inuse-$(Get-Date -Format yyyyMMddHHmmss)"
