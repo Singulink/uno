@@ -19,8 +19,8 @@ Then it tidies the cache (restores the packages' own Android archives, removes f
 that every Uno assembly those apps load was built from the commit, or still is the package's original. Rebuild the apps
 afterwards.
 
-Visual Studio can stay open. Files it keeps loaded (the build tasks) are moved aside and replaced, and it uses the new ones
-once restarted; the script lists them when that happens. Dev servers running from the overridden version are stopped.
+Visual Studio and running dev servers can stay open. Files they keep loaded (the build tasks, the dev server host) are moved
+aside and replaced, and they use the new ones once restarted; the script names what to restart when that happens.
 
 .EXAMPLE
 build\Publish-NuGetCacheOverride.ps1
@@ -47,6 +47,60 @@ param(
 Set-StrictMode -Version 3
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+# Names the processes holding files open, through the Restart Manager.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+namespace UnoPublish
+{
+	public static class FileLocks
+	{
+		[StructLayout(LayoutKind.Sequential)]
+		struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+
+		[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+		struct RM_PROCESS_INFO
+		{
+			public RM_UNIQUE_PROCESS Process;
+			[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strAppName;
+			[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string strServiceShortName;
+			public int ApplicationType;
+			public uint AppStatus;
+			public uint TSSessionId;
+			[MarshalAs(UnmanagedType.Bool)] public bool bRestartable;
+		}
+
+		[DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmStartSession(out uint handle, int flags, string key);
+		[DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint handle);
+		[DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)] static extern int RmRegisterResources(uint handle, uint files, string[] names, uint apps, RM_UNIQUE_PROCESS[] processes, uint services, string[] serviceNames);
+		[DllImport("rstrtmgr.dll")] static extern int RmGetList(uint handle, out uint needed, ref uint count, [In, Out] RM_PROCESS_INFO[] infos, ref uint reasons);
+
+		// "name|process id" for every process holding one of the files.
+		public static List<string> GetHolders(string[] paths)
+		{
+			var holders = new List<string>();
+			uint handle;
+			if (RmStartSession(out handle, 0, Guid.NewGuid().ToString()) != 0) return holders;
+			try
+			{
+				if (RmRegisterResources(handle, (uint)paths.Length, paths, 0, null, 0, null) != 0) return holders;
+				uint needed, count = 0, reasons = 0;
+				RmGetList(handle, out needed, ref count, null, ref reasons);
+				if (needed == 0) return holders;
+				var infos = new RM_PROCESS_INFO[needed];
+				count = needed;
+				if (RmGetList(handle, out needed, ref count, infos, ref reasons) != 0) return holders;
+				for (int i = 0; i < count; i++) holders.Add(infos[i].strAppName + "|" + infos[i].Process.dwProcessId);
+			}
+			finally { RmEndSession(handle); }
+			return holders;
+		}
+	}
+}
+'@
 
 function Write-Step([string]$Text) { Write-Host "`n== $Text" -ForegroundColor Cyan }
 
@@ -107,29 +161,22 @@ if (-not $VerifyOnly) {
 		throw "$Worktree has src\crosstargeting_override.props, which narrows the target frameworks. Delete it; the publish worktree builds every framework."
 	}
 
-	# Dev servers started from this version hold its host and processor assemblies open.
-	$devServerFolder = [regex]::Escape((Join-Path $cache "uno.winui.devserver\$Version"))
-	$devServers = @(Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe'" | Where-Object { $_.CommandLine -match $devServerFolder })
-	foreach ($process in $devServers) {
-		Write-Host "Stopping dev server process $($process.ProcessId)"
-		Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-	}
-
-	# MSBuild nodes left by earlier command line builds keep the cached tasks loaded too.
+	# MSBuild nodes left by earlier command line builds keep the cached tasks loaded for nothing.
 	Invoke-Native dotnet @('build-server', 'shutdown', '--msbuild') | Out-Null
 
-	# Visual Studio and its MSBuild nodes keep the build tasks loaded while a solution using this version is open, so they
-	# can't be overwritten. A loaded file can still be renamed, though: it moves aside, a copy takes its place for the
-	# override to replace, and Visual Studio goes on with the old one until it restarts. Earlier runs' are deleted once free.
+	# Visual Studio, its MSBuild nodes and running dev servers keep files of this version loaded (build tasks, the dev server
+	# host), so they can't be overwritten. A loaded file can still be renamed, though: it moves aside, a copy takes its place
+	# for the override to replace, and whatever loaded it goes on with the old one until it restarts. Earlier runs' are
+	# deleted once free.
 	$packageFolders = @(Get-ChildItem $cache -Directory -Filter 'uno*' | ForEach-Object { Join-Path $_.FullName $Version } | Where-Object { Test-Path $_ })
-	$inUse = @()
+	$movedAside = @()
 	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Filter *.dll) {
 		try { [IO.File]::Open($file.FullName, 'Open', 'ReadWrite', 'None').Dispose() }
 		catch {
 			$aside = "$($file.FullName).inuse-$(Get-Date -Format yyyyMMddHHmmss)"
 			Move-Item $file.FullName $aside
 			Copy-Item $aside $file.FullName
-			$inUse += $file.FullName
+			$movedAside += $aside
 		}
 	}
 	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Filter *.inuse-*) {
@@ -289,9 +336,11 @@ if ($stale.Count) {
 	$failures.Add("$($stale.Count) assemblies weren't rebuilt from $shortCommit")
 }
 
-if (-not $VerifyOnly -and $inUse) {
-	Write-Host "`nVisual Studio still has the previous copies of these loaded; restart it to use the new ones:" -ForegroundColor Yellow
-	$inUse | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+if (-not $VerifyOnly -and $movedAside) {
+	Write-Host "`n$($movedAside.Count) files were in use. Restart these to load the new copies:" -ForegroundColor Yellow
+	foreach ($group in [UnoPublish.FileLocks]::GetHolders([string[]]$movedAside) | Group-Object { $_.Split('|')[0] }) {
+		Write-Host "  $($group.Name) (process $(($group.Group | ForEach-Object { $_.Split('|')[1] }) -join ', '))" -ForegroundColor Yellow
+	}
 }
 
 if ($failures.Count) {
