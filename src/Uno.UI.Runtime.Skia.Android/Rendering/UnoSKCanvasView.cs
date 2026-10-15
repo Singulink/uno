@@ -7,6 +7,7 @@ using Android.OS;
 using Android.Runtime;
 using Android.Util;
 using Android.Views;
+using Android.Views.Accessibility;
 using Android.Views.Autofill;
 using Android.Views.InputMethods;
 using AndroidX.Core.Graphics;
@@ -87,9 +88,17 @@ internal sealed partial class UnoSKCanvasView : GLSurfaceView, IUnoSkiaRenderVie
 			return base.DispatchKeyEvent(e);
 		}
 
-		return ExploreByTouchHelper.DispatchKeyEvent(e) ||
+		return (ShouldDispatchToAccessibility(e) && ExploreByTouchHelper.DispatchKeyEvent(e)) ||
 			base.DispatchKeyEvent(e);
 	}
+
+	// The helper moves its keyboard focus with keys and treats Enter as a click on the virtual view holding it, which can
+	// be any element it focused earlier, even one no longer shown. So keys only reach it while an accessibility service runs
+	// (as upstream does since unoplatform/uno af8327aa22), and never for an IME editor action: a soft keyboard's Next or
+	// Done arrives as an Enter key and has to stay text input.
+	private bool ShouldDispatchToAccessibility(KeyEvent e) =>
+		(e.Flags & KeyEventFlags.EditorAction) == 0 &&
+		(Context?.GetSystemService(Context.AccessibilityService) as AccessibilityManager)?.IsEnabled is true;
 
 	protected override void OnFocusChanged(bool gainFocus, [GeneratedEnum] FocusSearchDirection direction, Rect? previouslyFocusedRect)
 	{
