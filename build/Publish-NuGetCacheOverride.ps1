@@ -3,7 +3,7 @@
 Builds the Uno packages our apps use from a branch of this fork and writes them over the same version in the NuGet cache.
 
 .DESCRIPTION
-Apps keep restoring the published version (6.8.0-dev.212 for Uno.Sdk 6.8.0-dev.60), and the override build target
+Apps keep restoring the published version (6.8.0-dev.222 for Uno.Sdk 6.8.0-dev.66), and the override build target
 (UnoNugetOverrideVersion, src/Uno.CrossTargetting.targets) replaces that version's files in the cache with local builds.
 
 The build runs in a worktree of its own, created on first use next to the main checkout and moved to -Ref on every run, so
@@ -36,7 +36,7 @@ param(
 	[string]$Ref = 'custom/6.8',
 
 	# Version of the Uno packages the apps restore.
-	[string]$Version = '6.8.0-dev.212',
+	[string]$Version = '6.8.0-dev.222',
 
 	# Worktree to build in. Defaults to uno-<major><minor>-publish next to the main checkout. Don't work in it: every run
 	# moves it to -Ref, and it refuses to run while it has changes.

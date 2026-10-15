@@ -4,14 +4,14 @@ Our apps run on a custom build of Uno Platform 6.8. It contains fixes they need 
 
 - **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
 - **Branch:** `custom/6.8`
-- **Based on:** the official Uno.WinUI `6.8.0-dev.212`, which is commit `06d268cb3b` on Uno's `servicing/6.8` branch
+- **Based on:** the official Uno.WinUI `6.8.0-dev.222`, which is commit `324a97b766` on Uno's `servicing/6.8` branch
 - **Publish script:** [`build/Publish-NuGetCacheOverride.ps1`](Publish-NuGetCacheOverride.ps1)
 
 ## How apps pick up the custom build
 
-The apps reference the **official, published** Uno packages. Their `global.json` pins `Uno.Sdk` `6.8.0-dev.60`, which brings in `Uno.WinUI` `6.8.0-dev.212` and the related packages from nuget.org. Nothing in an app's repository points at the fork.
+The apps reference the **official, published** Uno packages. Their `global.json` pins `Uno.Sdk` `6.8.0-dev.66`, which brings in `Uno.WinUI` `6.8.0-dev.222` and the related packages from nuget.org. Nothing in an app's repository points at the fork.
 
-The custom build is applied on each developer machine. It **overwrites the files of those package versions in the local NuGet cache** (`%USERPROFILE%\.nuget\packages`, or `%NUGET_PACKAGES%` if set). After that, every app on the machine that restores Uno `6.8.0-dev.212` builds and runs with the custom assemblies. The overwrite uses Uno's own NuGet override build mechanism (`UnoNugetOverrideVersion`), driven by the publish script.
+The custom build is applied on each developer machine. It **overwrites the files of those package versions in the local NuGet cache** (`%USERPROFILE%\.nuget\packages`, or `%NUGET_PACKAGES%` if set). After that, every app on the machine that restores Uno `6.8.0-dev.222` builds and runs with the custom assemblies. The overwrite uses Uno's own NuGet override build mechanism (`UnoNugetOverrideVersion`), driven by the publish script.
 
 This has consequences:
 
@@ -82,7 +82,7 @@ To see what your cache currently has without building anything, run it with `-Ve
 powershell -ExecutionPolicy Bypass -File C:\src\uno\build\Publish-NuGetCacheOverride.ps1 -VerifyOnly
 ```
 
-You can also check one file by hand. Look at the product version of `%USERPROFILE%\.nuget\packages\uno.winui\6.8.0-dev.212\uno-runtime\net10.0\skia\Uno.UI.dll`, in Properties > Details. The custom build shows `255.255.255.255+<commit>`, and the official one shows `6.8.0-dev.212+06d268cb3b...`.
+You can also check one file by hand. Look at the product version of `%USERPROFILE%\.nuget\packages\uno.winui\6.8.0-dev.222\uno-runtime\net10.0\skia\Uno.UI.dll`, in Properties > Details. The custom build shows `255.255.255.255+<commit>`, and the official one shows `6.8.0-dev.222+324a97b766...`.
 
 ## What the script does
 
@@ -93,7 +93,7 @@ Publish-NuGetCacheOverride.ps1 [-Ref <branch or commit>] [-Version <package vers
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `-Ref` | `custom/6.8` | Branch or commit to build, as it is in your clone. |
-| `-Version` | `6.8.0-dev.212` | Version of the Uno packages the apps restore. It must match what the apps' `Uno.Sdk` resolves to. |
+| `-Version` | `6.8.0-dev.222` | Version of the Uno packages the apps restore. It must match what the apps' `Uno.Sdk` resolves to. |
 | `-Worktree` | `uno-68-publish` next to your clone | Folder the build runs in. |
 | `-VerifyOnly` | off | Only tidy and check the cache, without building. |
 
@@ -120,7 +120,7 @@ The step builds don't write the cache directly. With `UnoNugetOverrideVersion` s
 
 The script also passes `-p:NuGetAudit=false`. Uno treats NuGet vulnerability warnings as errors, so an advisory published after a commit would otherwise stop a build of code that built fine before.
 
-**3. Tidying the cache.** The script deletes `6.8.0-dev.212` folders that NuGet never restored, which older overrides created. It removes target framework folders that the package's `.nupkg` doesn't have. It also puts back the package's own `.aar` files where an older override replaced them.
+**3. Tidying the cache.** The script deletes `6.8.0-dev.222` folders that NuGet never restored, which older overrides created. It removes target framework folders that the package's `.nupkg` doesn't have. It also puts back the package's own `.aar` files where an older override replaced them.
 
 **4. The check.** For every Uno package at that version in the cache, the script looks at the folders that Skia apps on desktop, WebAssembly, Android and iOS load assemblies from. It sorts each `Uno*.dll` by the commit it was built from, using the commit embedded in its product version:
 
@@ -143,7 +143,7 @@ Restart those processes when convenient, for example by closing and reopening Vi
 
 ## Why every assembly must come from the same commit
 
-Don't override individual projects by hand, for example with `dotnet build -p:UnoNugetOverrideVersion=6.8.0-dev.212` on one project. Always publish with the script.
+Don't override individual projects by hand, for example with `dotnet build -p:UnoNugetOverrideVersion=6.8.0-dev.222` on one project. Always publish with the script.
 
 Uno's assemblies call each other's internal and public members. Changes in the fork can change those members, and C# binds some things at compile time, such as optional parameter defaults. An assembly compiled against one commit can therefore crash against another. For example:
 
@@ -157,20 +157,36 @@ The script rebuilds the whole set from one commit and verifies the result, so mi
 - **Where changes go:** commit to a branch off `custom/6.8` and open a pull request against `custom/6.8` in `Singulink/uno`. Fixes that also apply to Uno itself should be reported or proposed upstream in `unoplatform/uno` as well.
 - **Trying a change before it's merged:** commit it on your branch, then publish that branch with `-Ref`, for example `-Ref my-fix-branch`. The script only builds commits, so uncommitted changes need a commit first; a temporary one is fine. Publish `custom/6.8` again when you're done, so your cache matches everyone else's.
 - **Faster development builds:** to build and test inside the Uno repository itself, Uno's [building documentation](https://platform.uno/docs/articles/uno-development/building-uno-ui.html#building-unoui-for-a-single-target-platform) describes `src\crosstargeting_override.props`, which limits builds to one target framework. That file only affects your clone. The publish script ignores it because it builds in its own worktree.
-- **When an app moves to another Uno version:** the custom build only applies to the version given by `-Version`. If the apps' `Uno.Sdk` changes, the fork's branch has to be rebased onto that release and `-Version` updated to match.
-- **What the custom build contains:** see the branch's history on top of the official build. The commit subjects say what each fix does, and "(port)" marks backports of upstream changes.
+- **When the apps move to another Uno version:** see [Catching up to a new Uno release](#catching-up-to-a-new-uno-release).
+- **What the custom build contains:** see the branch's history on top of the official build it's based on. The commit subjects say what each fix does, and "(port)" marks backports of upstream changes. A few of those ports have since been released by Uno too, and are listed anyway.
 
   ```powershell
-  git -C C:\src\uno log --no-merges --oneline 06d268cb3b..custom/6.8
+  git -C C:\src\uno log --no-merges --oneline 324a97b766..custom/6.8
   ```
 
   As of October 2026, it includes:
   - iOS: the scene life cycle, which apps built with Xcode 27 need to launch on iOS 27, plus URL activation and window visibility events.
   - Android: the soft keyboard's Next/Done keys.
-  - WebAssembly: soft keyboard and Enter key handling, Android and iOS text input, clipboard, the splash screen, and window activation.
+  - WebAssembly: soft keyboard Enter key handling, Android and iOS text input, and clipboard.
   - Image memory release and cancellation.
   - Long-press and context flyouts, tooltips, RadioButton groups and popup dismissal.
   - The publish tooling.
+
+## Catching up to a new Uno release
+
+When the apps move to a newer `Uno.Sdk` 6.8 build, the custom build moves to the Uno release that SDK uses:
+
+1. **Find the release.** In the new `Uno.Sdk` package, `targets/netstandard2.0/packages.json` gives the Uno version under the `Core` group, for example `6.8.0-dev.222`. That version's `uno.winui.nuspec` gives the commit it was built from, in the `commit` attribute of `<repository>`. You can read it at `https://api.nuget.org/v3-flatcontainer/uno.winui/<version>/uno.winui.nuspec`.
+2. **Merge it into `custom/6.8`.** Merge rather than rebase: a rebase gives every commit a new ID, which breaks links to them and everyone's clone of the branch.
+
+   ```powershell
+   git -C C:\src\uno fetch https://github.com/unoplatform/uno.git servicing/6.8
+   git -C C:\src\uno merge <commit>
+   ```
+
+   Fixes this branch ported early, and that Uno has released since, usually merge as the same change. Resolve any conflicts, then check what upstream changed in the areas the branch's fixes touch, for example with `git log <previous base>..<commit> -- <folder>`. A clean merge can still change behavior around a fix.
+3. **Update the version.** Set the default of `-Version` in the script and the "Based on" line at the top of this guide. Also replace the old version number elsewhere in this guide.
+4. **Move all the apps together.** Update `Uno.Sdk` in each app's `global.json`, restore, run the publish script, then rebuild and retest the apps. An app still on the old `Uno.Sdk` restores the old Uno version and quietly builds with the stock packages. To keep one on the old version for a while, publish the previous commit for it too: `-Ref <commit> -Version <old version>`.
 
 ## Going back to the official packages
 
@@ -183,11 +199,11 @@ dotnet build <app project> --disable-build-servers
 
 Delete the app's `obj\project.assets.json` before that build. NuGet can otherwise reuse file lists that came from the overridden cache.
 
-To remove the custom build from your normal cache completely, delete the `6.8.0-dev.212` folders of the Uno packages and the apps' `obj` folders, then restore. NuGet then downloads the official packages again:
+To remove the custom build from your normal cache completely, delete the `6.8.0-dev.222` folders of the Uno packages and the apps' `obj` folders, then restore. NuGet then downloads the official packages again:
 
 ```powershell
 Get-ChildItem "$env:USERPROFILE\.nuget\packages" -Directory -Filter 'uno*' |
-    ForEach-Object { Join-Path $_.FullName '6.8.0-dev.212' } |
+    ForEach-Object { Join-Path $_.FullName '6.8.0-dev.222' } |
     Where-Object { Test-Path $_ } |
     Remove-Item -Recurse -Force
 ```
@@ -196,7 +212,7 @@ Get-ChildItem "$env:USERPROFILE\.nuget\packages" -Directory -Filter 'uno*' |
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `Uno.WinUI 6.8.0-dev.212 isn't in the NuGet cache` | Restore one of the apps first, then run the script. |
+| `Uno.WinUI 6.8.0-dev.222 isn't in the NuGet cache` | Restore one of the apps first, then run the script. |
 | `<worktree> has changes` | Something edited the script's working copy. Delete it with `git worktree remove --force <worktree>` and run again. |
 | `N assemblies weren't rebuilt from <commit>` | A build step failed (see the binlog named in the output), or a package was restored after the last publish. Fix the step if needed and run again. |
 | A step fails with `MSB3021`/`MSB3027` (file in use) | Something locked a file type the script doesn't move aside yet. Close the process named in the error and run again. |
