@@ -7,7 +7,7 @@
 		a mixed 4.x/5.x graph ships in one host flavor, the same skew class spec 053 fixes.
 	-->
 	<PropertyGroup Condition="'$(TargetFramework)'=='net9.0'">
-		<DevServerRoslynVersion>4.14.0</DevServerRoslynVersion>
+		<DevServerRoslynVersion>5.9.0</DevServerRoslynVersion>
 		<DevServerMSBuildVersion>17.7.2</DevServerMSBuildVersion>
 		<DevServerMSBuildToolsVersion>17.8.43</DevServerMSBuildToolsVersion>
 	</PropertyGroup>
