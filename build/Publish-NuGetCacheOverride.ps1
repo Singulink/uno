@@ -19,8 +19,8 @@ Then it tidies the cache (restores the packages' own Android archives, removes f
 that every Uno assembly those apps load was built from the commit, or still is the package's original. Rebuild the apps
 afterwards.
 
-Close Visual Studio solutions that use the overridden version first: Visual Studio keeps the cached build tasks loaded, and
-they can't be replaced while it does. The dev servers running from that version are stopped automatically.
+Visual Studio can stay open. Files it keeps loaded (the build tasks) are moved aside and replaced, and it uses the new ones
+once restarted; the script lists them when that happens. Dev servers running from the overridden version are stopped.
 
 .EXAMPLE
 build\Publish-NuGetCacheOverride.ps1
@@ -118,13 +118,22 @@ if (-not $VerifyOnly) {
 	# MSBuild nodes left by earlier command line builds keep the cached tasks loaded too.
 	Invoke-Native dotnet @('build-server', 'shutdown', '--msbuild') | Out-Null
 
-	$locked = @()
-	foreach ($file in Get-ChildItem (Join-Path $cache "uno.winui\$Version\buildTransitive\Uno.UI.Tasks"), (Join-Path $cache "uno.winui\$Version\analyzers\dotnet\cs") -Filter *.dll -ErrorAction SilentlyContinue) {
+	# Visual Studio and its MSBuild nodes keep the build tasks loaded while a solution using this version is open, so they
+	# can't be overwritten. A loaded file can still be renamed, though: it moves aside, a copy takes its place for the
+	# override to replace, and Visual Studio goes on with the old one until it restarts. Earlier runs' are deleted once free.
+	$packageFolders = @(Get-ChildItem $cache -Directory -Filter 'uno*' | ForEach-Object { Join-Path $_.FullName $Version } | Where-Object { Test-Path $_ })
+	$inUse = @()
+	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Filter *.dll) {
 		try { [IO.File]::Open($file.FullName, 'Open', 'ReadWrite', 'None').Dispose() }
-		catch { $locked += $file.FullName }
+		catch {
+			$aside = "$($file.FullName).inuse-$(Get-Date -Format yyyyMMddHHmmss)"
+			Move-Item $file.FullName $aside
+			Copy-Item $aside $file.FullName
+			$inUse += $file.FullName
+		}
 	}
-	if ($locked) {
-		throw "These files are in use, most likely by Visual Studio with a solution that uses Uno $Version open. Close it and run this again.`n$($locked -join "`n")"
+	foreach ($file in Get-ChildItem $packageFolders -Recurse -File -Filter *.inuse-*) {
+		Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
 	}
 
 	$logs = Join-Path $Worktree 'artifacts\nuget-override'
@@ -278,6 +287,11 @@ if ($stale.Count) {
 	Write-Host "$($stale.Count) built from another commit:" -ForegroundColor Red
 	$stale | Sort-Object | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
 	$failures.Add("$($stale.Count) assemblies weren't rebuilt from $shortCommit")
+}
+
+if (-not $VerifyOnly -and $inUse) {
+	Write-Host "`nVisual Studio still has the previous copies of these loaded; restart it to use the new ones:" -ForegroundColor Yellow
+	$inUse | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
 }
 
 if ($failures.Count) {
