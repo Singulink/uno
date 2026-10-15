@@ -133,33 +133,55 @@
 		<DefineConstants>$(DefineConstants);IS_CI_OR_DEBUG</DefineConstants>
 	</PropertyGroup>
 
+	<!--
+		An override only writes into a lib or uno-runtime folder the restored package already has. NuGet reads no others, so writing
+		a new one (or a package nothing restored, for a project that ships inside another package) only leaves clutter in the cache
+		that a later restore can pick up. Android folders carry an API level the target framework lacks, and it differs between packages
+		(net9.0-android30.0 in Uno.WinRT, net9.0-android35.0 in the Android runtime), so that folder is looked up.
+	-->
+	<Target Name="_UnoResolveNugetOverrideFolders" AfterTargets="AfterBuild" Condition="'$(UnoNugetOverrideVersion)'!=''">
+		<PropertyGroup>
+			<_UnoOverridePackageId Condition="'$(CommonOverridePackageId)'!=''">$(CommonOverridePackageId.ToLowerInvariant())</_UnoOverridePackageId>
+			<_UnoOverridePackageId Condition="'$(CommonOverridePackageId)'==''">$(AssemblyName.ToLowerInvariant())</_UnoOverridePackageId>
+			<_UnoOverridePackageId>$(_UnoOverridePackageId.Replace('uno.ui','uno.winui'))</_UnoOverridePackageId>
+			<_UnoOverridePackageFolder>$(NuGetPackageRoot)\$(_UnoOverridePackageId)\$(UnoNugetOverrideVersion)</_UnoOverridePackageFolder>
+
+			<_UnoOverrideTargetFramework>$(TargetFramework)</_UnoOverrideTargetFramework>
+			<_UnoOverrideAndroidFolders Condition="!Exists('$(_UnoOverridePackageFolder)\lib\$(TargetFramework)') and $(TargetFramework.EndsWith('-android')) and Exists('$(_UnoOverridePackageFolder)\lib')">$([System.IO.Directory]::GetDirectories('$(_UnoOverridePackageFolder)\lib', '$(TargetFramework)*'))</_UnoOverrideAndroidFolders>
+			<_UnoOverrideTargetFramework Condition="'$(_UnoOverrideAndroidFolders)'!='' and !$(_UnoOverrideAndroidFolders.Contains(';'))">$([System.IO.Path]::GetFileName('$(_UnoOverrideAndroidFolders)'))</_UnoOverrideTargetFramework>
+
+			<_UnoOverrideLibFolder>$(_UnoOverridePackageFolder)\lib\$(_UnoOverrideTargetFramework)</_UnoOverrideLibFolder>
+			<_UnoOverrideRuntimeFolder>$(_UnoOverrideLibFolder)</_UnoOverrideRuntimeFolder>
+			<_UnoOverrideRuntimeFolder Condition="'$(UnoRuntimeIdentifier)'!='' and '$(UnoRuntimeIdentifier)'!='Reference'">$(_UnoOverridePackageFolder)\uno-runtime\$(TargetFramework)\$(UnoRuntimeIdentifier.ToLower())</_UnoOverrideRuntimeFolder>
+		</PropertyGroup>
+
+		<Message Importance="high"
+				 Text="NOT OVERRIDING NUGET PACKAGE CACHE: $(_UnoOverrideLibFolder) is not a folder of a restored package"
+				 Condition="('$(UnoRuntimeIdentifier)'=='' or '$(UnoRuntimeIdentifier)'=='Reference') and !Exists('$(_UnoOverrideLibFolder)')" />
+		<Message Importance="high"
+				 Text="NOT OVERRIDING NUGET PACKAGE CACHE: $(_UnoOverrideRuntimeFolder) is not a folder of a restored package"
+				 Condition="'$(UseCommonOverridePackage)'!='' and !Exists('$(_UnoOverrideRuntimeFolder)')" />
+	</Target>
+
 	<Target Name="_UnoOverrideNuget"
-		  AfterTargets="AfterBuild"
+		  AfterTargets="_UnoResolveNugetOverrideFolders"
 		  DependsOnTargets="BuiltProjectOutputGroup"
-		  Condition="'$(UnoNugetOverrideVersion)'!='' and ('$(UnoRuntimeIdentifier)'=='' or '$(UnoRuntimeIdentifier)'=='Reference')">
+		  Condition="'$(UnoNugetOverrideVersion)'!='' and ('$(UnoRuntimeIdentifier)'=='' or '$(UnoRuntimeIdentifier)'=='Reference') and Exists('$(_UnoOverrideLibFolder)')">
 
 		<PropertyGroup>
-			<_OverrideTargetFramework>$(TargetFramework)</_OverrideTargetFramework>
-			
-			<!--
-				The packages ship one Android folder per .NET version (net9.0-android30.0, net10.0-android36.0,
-				see Uno.WinRT.nuspec), so the build TFM needs the matching API suffix to hit the folder NuGet reads.
-			-->
-			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '9.0'">30.0</_OverrideAndroidApiLevel>
-			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '10.0'">36.0</_OverrideAndroidApiLevel>
-			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android')) AND '$(_OverrideAndroidApiLevel)' != ''">$(_OverrideTargetFramework)$(_OverrideAndroidApiLevel)</_OverrideTargetFramework>
-
-			<_overridePackageId>$(CommonOverridePackageId.ToLowerInvariant())</_overridePackageId>
-			<_overridePackageId Condition="'$(CommonOverridePackageId)'==''">$(AssemblyName.ToLowerInvariant())</_overridePackageId>
-			<_overridePackageId>$(_overridePackageId.Replace('uno.ui','uno.winui'))</_overridePackageId>
-			<_TargetNugetFolder>$(NuGetPackageRoot)\$(_overridePackageId)\$(UnoNugetOverrideVersion)\lib\$(_OverrideTargetFramework)</_TargetNugetFolder>
-			<_TargetNugetRefFolder>$(NuGetPackageRoot)\$(_overridePackageId)\$(UnoNugetOverrideVersion)\ref\$(_OverrideTargetFramework)</_TargetNugetRefFolder>
+			<_OverrideTargetFramework>$(_UnoOverrideTargetFramework)</_OverrideTargetFramework>
+			<_TargetNugetFolder>$(_UnoOverrideLibFolder)</_TargetNugetFolder>
+			<_TargetNugetRefFolder>$(_UnoOverridePackageFolder)\ref\$(_OverrideTargetFramework)</_TargetNugetRefFolder>
 			<!-- Track ownership so cleanup only touches files produced by this project/TFM. -->
 			<_OwnedOutputManifest>$(_TargetNugetFolder)\.$(MSBuildProjectName).$(_OverrideTargetFramework).owned-files.txt</_OwnedOutputManifest>
 			<_OwnedRefOutputManifest>$(_TargetNugetRefFolder)\.$(MSBuildProjectName).$(_OverrideTargetFramework).owned-files.txt</_OwnedRefOutputManifest>
 		</PropertyGroup>
 		<ItemGroup>
-			<_OutputFiles Include="$(TargetDir)\*.*" />
+			<!--
+				The packages keep their own Android archives. The one a local build makes compiles in Java classes that the
+				official package leaves to Uno.UI.BindingHelper.Android.aar, so an app would fail in D8 with a type defined twice.
+			-->
+			<_OutputFiles Include="$(TargetDir)\*.*" Exclude="$(TargetDir)\*.aar" />
 			<_OutputRefFiles Include="$(TargetDir)\ref\*.*" />
 			<!-- Precompute destination paths so cleanup and copy use the same mapping. -->
 			<_OutputTargetFiles Include="@(_OutputFiles->'$(_TargetNugetFolder)\%(RecursiveDir)%(Filename)%(Extension)')" />
@@ -190,6 +212,8 @@
 		<ItemGroup>
 			<_StaleOwnedTargetFiles Include="@(_PreviouslyOwnedTargetFiles)" Exclude="@(_OutputTargetFiles)" />
 			<_StaleOwnedTargetRefFiles Include="@(_PreviouslyOwnedTargetRefFiles)" Exclude="@(_OutputTargetRefFiles)" />
+			<!-- Earlier overrides recorded the archive as theirs; it is the package's own again. -->
+			<_StaleOwnedTargetFiles Remove="@(_StaleOwnedTargetFiles)" Condition="'%(Extension)' == '.aar'" />
 		</ItemGroup>
 		<Delete Files="@(_StaleOwnedTargetFiles);@(_StaleOwnedTargetRefFiles)" ContinueOnError="true" />
 
@@ -222,23 +246,13 @@
 	</Target>
 
 
-	<Target Name="CommonOverrideNuget" AfterTargets="AfterBuild" DependsOnTargets="BuiltProjectOutputGroup" Condition="'$(UnoNugetOverrideVersion)'!='' and '$(UseCommonOverridePackage)'!=''">
+	<Target Name="CommonOverrideNuget"
+		  AfterTargets="_UnoResolveNugetOverrideFolders"
+		  DependsOnTargets="BuiltProjectOutputGroup"
+		  Condition="'$(UnoNugetOverrideVersion)'!='' and '$(UseCommonOverridePackage)'!='' and Exists('$(_UnoOverrideRuntimeFolder)')">
 		<PropertyGroup>
-			<_OverrideTargetFramework>$(TargetFramework)</_OverrideTargetFramework>
-
-			<!--
-				The packages ship one Android folder per .NET version (net9.0-android30.0, net10.0-android36.0,
-				see Uno.WinRT.nuspec), so the build TFM needs the matching API suffix to hit the folder NuGet reads.
-			-->
-			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '9.0'">30.0</_OverrideAndroidApiLevel>
-			<_OverrideAndroidApiLevel Condition="$([MSBuild]::GetTargetFrameworkVersion('$(_OverrideTargetFramework)')) == '10.0'">36.0</_OverrideAndroidApiLevel>
-			<_OverrideTargetFramework Condition="$(_OverrideTargetFramework.EndsWith('.0-android')) AND '$(_OverrideAndroidApiLevel)' != ''">$(_OverrideTargetFramework)$(_OverrideAndroidApiLevel)</_OverrideTargetFramework>
-
-			<CommonOverridePackageId Condition="'$(CommonOverridePackageId)'==''">$(AssemblyName)</CommonOverridePackageId>
-			<CommonOverridePackageId>$(CommonOverridePackageId.ToLowerInvariant())</CommonOverridePackageId>
-			<CommonOverridePackageId>$(CommonOverridePackageId.Replace('uno.ui','uno.winui'))</CommonOverridePackageId>
-			<_TargetNugetFolder Condition="'$(UnoRuntimeIdentifier)'=='' or '$(UnoRuntimeIdentifier)'=='Reference'">$(NuGetPackageRoot)\$(CommonOverridePackageId)\$(UnoNugetOverrideVersion)\lib\$(_OverrideTargetFramework)</_TargetNugetFolder>
-			<_TargetNugetFolder Condition="'$(UnoRuntimeIdentifier)'!='' and '$(UnoRuntimeIdentifier)'!='Reference'">$(NuGetPackageRoot)\$(CommonOverridePackageId)\$(UnoNugetOverrideVersion)\uno-runtime\$(TargetFramework)\$(UnoRuntimeIdentifier.ToLower())</_TargetNugetFolder>
+			<_OverrideTargetFramework>$(_UnoOverrideTargetFramework)</_OverrideTargetFramework>
+			<_TargetNugetFolder>$(_UnoOverrideRuntimeFolder)</_TargetNugetFolder>
 			<!-- Track ownership so shared package folders are cleaned safely. -->
 			<_OwnedCommonOverrideManifest>$(_TargetNugetFolder)\.$(MSBuildProjectName).$(_OverrideTargetFramework).owned-files.txt</_OwnedCommonOverrideManifest>
 		</PropertyGroup>
