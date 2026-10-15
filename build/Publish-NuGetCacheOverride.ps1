@@ -50,8 +50,17 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 function Write-Step([string]$Text) { Write-Host "`n== $Text" -ForegroundColor Cyan }
 
+# Windows PowerShell turns what a native command writes to stderr into errors when output is redirected, which
+# $ErrorActionPreference = 'Stop' would make fatal, so native commands only fail by their exit code.
+function Invoke-Native([string]$Command, [string[]]$Arguments) {
+	$previous = $ErrorActionPreference
+	$ErrorActionPreference = 'Continue'
+	try { & $Command @Arguments }
+	finally { $ErrorActionPreference = $previous }
+}
+
 function Invoke-Git {
-	$output = & git @args
+	$output = Invoke-Native git $args
 	if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed with exit code $LASTEXITCODE" }
 	return $output
 }
@@ -79,7 +88,7 @@ if (-not $VerifyOnly) {
 	Write-Step "Preparing $Worktree at $Ref ($shortCommit)"
 
 	if (-not (Test-Path $Worktree)) {
-		Invoke-Git -C $repoRoot worktree add --detach $Worktree $commit | Out-Null
+		Invoke-Git -C $repoRoot worktree add --quiet --detach $Worktree $commit | Out-Null
 	}
 	else {
 		if ((Invoke-Git -C $Worktree rev-parse --path-format=absolute --git-common-dir) -ne (Invoke-Git -C $repoRoot rev-parse --path-format=absolute --git-common-dir)) {
@@ -107,7 +116,7 @@ if (-not $VerifyOnly) {
 	}
 
 	# MSBuild nodes left by earlier command line builds keep the cached tasks loaded too.
-	& dotnet build-server shutdown --msbuild | Out-Null
+	Invoke-Native dotnet @('build-server', 'shutdown', '--msbuild') | Out-Null
 
 	$locked = @()
 	foreach ($file in Get-ChildItem (Join-Path $cache "uno.winui\$Version\buildTransitive\Uno.UI.Tasks"), (Join-Path $cache "uno.winui\$Version\analyzers\dotnet\cs") -Filter *.dll -ErrorAction SilentlyContinue) {
@@ -151,7 +160,7 @@ if (-not $VerifyOnly) {
 		if ($step.ContainsKey('Framework')) { $arguments += @('-f', $step.Framework) }
 
 		$watch = [Diagnostics.Stopwatch]::StartNew()
-		& dotnet @arguments
+		Invoke-Native dotnet $arguments
 		$watch.Stop()
 
 		if ($LASTEXITCODE -ne 0) {
