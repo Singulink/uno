@@ -42,6 +42,9 @@ internal partial class PopupRoot : Canvas
 	{
 		if (XamlRoot is { } xamlRoot)
 		{
+			// Let go of an earlier subscription first, as its disposal clears _activatedWindow.
+			_subscriptions.Disposable = null;
+
 			CompositeDisposable disposables = new();
 
 			_xamlRootSize = xamlRoot.Size;
@@ -84,7 +87,9 @@ internal partial class PopupRoot : Canvas
 			return;
 		}
 
-		CloseLightDismissablePopups();
+		// As in WinUI (Popup_Partial.cpp OnXamlLostFocus), a popup without a child stays open, for compatibility with
+		// Windows 8 applications.
+		CloseLightDismissablePopups(keepPopupsWithoutChild: true);
 	}
 
 	// In WinUI a popup registers for the activation of its window when it opens (Popup_Partial.cpp
@@ -104,13 +109,15 @@ internal partial class PopupRoot : Canvas
 		_subscriptions.Disposable = null;
 	}
 
-	internal void CloseLightDismissablePopups()
+	internal void CloseLightDismissablePopups(bool keepPopupsWithoutChild = false)
 	{
 		var node = _openPopups.First;
 		while (node != null)
 		{
 			var next = node.Next;
-			if (node.Value.TryGetTarget<Popup>(out var popup) && popup.IsLightDismissEnabled)
+			if (node.Value.TryGetTarget<Popup>(out var popup)
+				&& popup.IsLightDismissEnabled
+				&& !(keepPopupsWithoutChild && popup.Child is null))
 			{
 				if (popup.AssociatedFlyout is { } flyout)
 				{
