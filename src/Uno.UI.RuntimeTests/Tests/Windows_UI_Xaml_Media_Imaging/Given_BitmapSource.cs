@@ -523,6 +523,88 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Media_Imaging
 			AssertDecoded((await DecodeInBrowser(images[0].Png))[0], images[0].Width, images[0].Height, images[0].PremultipliedFirstPixel);
 		}
 
+		[TestMethod]
+		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25541")]
+		public async Task When_Browser_Decodes_Then_Image_Holds_Rgba_Premultiplied()
+		{
+			// Red, green, blue and a half-transparent orange, with the RGBA premultiplied values the image must hold.
+			var pixels = new (SKColor Color, (int R, int G, int B, int A) Expected)[]
+			{
+				(new SKColor(255, 0, 0), (255, 0, 0, 255)),
+				(new SKColor(0, 255, 0), (0, 255, 0, 255)),
+				(new SKColor(0, 0, 255), (0, 0, 255, 255)),
+				(new SKColor(200, 100, 50, 128), (100, 50, 25, 128)),
+			};
+			byte[] png;
+			using (var bitmap = new SKBitmap(pixels.Length, 1, SKColorType.Rgba8888, SKAlphaType.Unpremul))
+			{
+				for (var x = 0; x < pixels.Length; x++)
+				{
+					bitmap.SetPixel(x, 0, pixels[x].Color);
+				}
+
+				using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+				png = data.ToArray();
+			}
+
+			var decoded = await global::Uno.Helpers.ImageSourceHelpers.ReadFromStreamAsCompositionSurface(new MemoryStream(png), CancellationToken.None);
+			Assert.AreEqual(global::Uno.UI.Xaml.Media.ImageDataKind.CompositionSurface, decoded.Kind, decoded.ToString());
+			using var pixmap = decoded.CompositionSurface.Image.PeekPixels();
+			Assert.IsNotNull(pixmap, "The decoded image should be a raster image.");
+			Assert.AreEqual(pixels.Length, pixmap.Width);
+			Assert.AreEqual(1, pixmap.Height);
+
+			// The SKCodec fallback decodes to BGRA: RGBA shows the browser decoded the image.
+			Assert.AreEqual(SKColorType.Rgba8888, pixmap.ColorType);
+			Assert.AreEqual(SKAlphaType.Premul, pixmap.AlphaType);
+
+			var bytes = pixmap.GetPixelSpan().ToArray();
+			for (var x = 0; x < pixels.Length; x++)
+			{
+				var (r, g, b, a) = pixels[x].Expected;
+				var actual = (R: bytes[x * 4], G: bytes[x * 4 + 1], B: bytes[x * 4 + 2], A: bytes[x * 4 + 3]);
+				Assert.IsTrue(
+					Math.Abs(actual.R - r) <= 2 && Math.Abs(actual.G - g) <= 2 && Math.Abs(actual.B - b) <= 2 && Math.Abs(actual.A - a) <= 2,
+					$"Pixel {x} is RGBA {actual.R},{actual.G},{actual.B},{actual.A}, expected {r},{g},{b},{a}.");
+			}
+		}
+
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25541")]
+		public unsafe void When_Image_Pixels_Are_Written_In_Place_Then_It_Holds_Them()
+		{
+			const int width = 3;
+			const int height = 2;
+			var expected = new byte[width * height * 4];
+			for (var i = 0; i < width * height; i++)
+			{
+				// Opaque, so any channel value is a valid premultiplied one.
+				expected[i * 4] = (byte)(i * 40);
+				expected[i * 4 + 1] = (byte)(i * 20 + 10);
+				expected[i * 4 + 2] = (byte)(250 - i * 30);
+				expected[i * 4 + 3] = 255;
+			}
+
+			var written = IntPtr.Zero;
+			using var image = global::Uno.Helpers.ImageSourceHelpers.CreateImage(width, height, expected, (pixels, source) =>
+			{
+				Assert.AreEqual(source.Length, pixels.Length, "The span should cover the image's tightly packed pixels.");
+				source.CopyTo(pixels);
+				fixed (byte* pointer = pixels)
+				{
+					written = (IntPtr)pointer;
+				}
+			});
+
+			// The image draws from the memory that was written, not from a copy of it.
+			using var pixmap = image.PeekPixels();
+			Assert.AreEqual(written, pixmap.GetPixels());
+			Assert.AreEqual(SKColorType.Rgba8888, pixmap.ColorType);
+			Assert.AreEqual(SKAlphaType.Premul, pixmap.AlphaType);
+			CollectionAssert.AreEqual(expected, pixmap.GetPixelSpan().ToArray());
+		}
+
 		private static byte[] CreatePng(int width, int height, SKColor color)
 		{
 			using var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);

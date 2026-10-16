@@ -17,6 +17,7 @@ using Uno.Foundation.Logging;
 
 #if __SKIA__
 using SkiaSharp;
+using System.Buffers;
 using System.Runtime.InteropServices.JavaScript;
 #endif
 
@@ -65,18 +66,17 @@ internal static partial class ImageSourceHelpers
 					return ImageData.Empty;
 				}
 
-				var bytes = decodedBufferObject.GetPropertyAsByteArray("bytes");
+				using var bytes = decodedBufferObject.GetPropertyAsJSObject("bytes");
+				if (bytes is null)
+				{
+					return ImageData.Empty;
+				}
 
 				try
 				{
-					// Copied into native memory: releasing the surface then frees the pixels at once, and the managed array is
-					// ordinary garbage. Pinning it instead kept it on the managed heap until a chain of finalizers unpinned it.
-					var image = SKImage.FromPixelCopy(new SKImageInfo(width, height, SKColorType.Rgba8888), bytes);
-					if (image == null)
-					{
-						throw new InvalidOperationException($"{nameof(SKImage)}.{nameof(SKImage.FromPixelCopy)} returned null.");
-					}
-
+					// Copied once, from the worker's buffer straight into the image's native storage: a managed copy of the
+					// image's size would sit in the large object space until a major collection.
+					var image = CreateImage(width, height, bytes, static (pixels, source) => CopyPixels(source, pixels));
 					return ImageData.FromCompositionSurface(new SkiaCompositionSurface(image));
 				}
 				catch (Exception e)
@@ -103,6 +103,24 @@ internal static partial class ImageSourceHelpers
 	// https://learn.microsoft.com/en-us/dotnet/core/compatibility/aspnet-core/6.0/byte-array-interop#receive-byte-array-in-javascript-from-net-1
 	[JSImport($"globalThis.Uno.UI.Runtime.Skia.ImageLoader.loadFromArray")]
 	private static partial Task<JSObject> LoadFromArray(byte[] array);
+
+	[JSImport($"globalThis.Uno.UI.Runtime.Skia.ImageLoader.copyPixels")]
+	private static partial void CopyPixels(JSObject source, [JSMarshalAs<JSType.MemoryView>] Span<byte> destination);
+
+	/// <summary>
+	/// Creates an RGBA premultiplied image whose tightly packed pixels <paramref name="writePixels"/> writes into the
+	/// image's own storage, so they are copied once. The span is only valid during the call and starts uninitialized.
+	/// </summary>
+	internal static unsafe SKImage CreateImage<TState>(int width, int height, TState state, SpanAction<byte, TState> writePixels)
+	{
+		using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+		writePixels(new Span<byte>((void*)bitmap.GetPixels(), bitmap.ByteCount), state);
+
+		// The image shares the pixels of an immutable bitmap instead of copying them.
+		bitmap.SetImmutable();
+		return SKImage.FromBitmap(bitmap)
+			?? throw new InvalidOperationException($"{nameof(SKImage)}.{nameof(SKImage.FromBitmap)} returned null.");
+	}
 #endif
 
 	public static async Task<ImageData> GetImageDataFromUriAsBytes(Uri uri, CancellationToken ct)
