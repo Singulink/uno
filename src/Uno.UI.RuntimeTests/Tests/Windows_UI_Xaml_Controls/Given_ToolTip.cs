@@ -794,6 +794,7 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/24557")]
 		public async Task When_Closed_Then_DataContext_Kept()
 		{
+			// The expected values are native WinUI's for the same steps; the test runs there too.
 			var owner = new Button { Content = "owner" };
 			var content = new TextBlock();
 			content.SetBinding(TextBlock.TextProperty, new Binding());
@@ -845,6 +846,7 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/24557")]
 		public async Task When_PlacementTarget_Then_DataContext_From_Owner()
 		{
+			// The expected values are native WinUI's for the same steps; the test runs there too.
 			var owner = new Button { Content = "owner", DataContext = "Owner" };
 			var target = new Button { Content = "target", DataContext = "Target" };
 			var SUT = new ToolTip { Content = "tooltip" };
@@ -904,8 +906,137 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 
 					SUT.IsOpen = false;
 					await TestServices.WindowHelper.WaitForIdle();
-					Assert.IsNull(SUT.Parent);
+
+					// WinUI's popup lets go of the tooltip once the Closed transition has played (ToolTip::Close).
+					await TestServices.WindowHelper.WaitFor(() => SUT.Parent is null, timeoutMS: 3000, message: "The popup kept the closed tooltip.");
 					Assert.IsNull(VisualTreeHelper.GetParent(SUT));
+				}
+			}
+			finally
+			{
+				SUT.IsOpen = false;
+#if HAS_UNO
+				VisualTreeHelper.CloseAllPopups(TestServices.WindowHelper.XamlRoot);
+#endif
+				TestServices.WindowHelper.WindowContent = null;
+			}
+		}
+
+		[TestMethod]
+		public async Task When_Moved_To_Another_Owner_While_Open_Then_Former_Owner_Not_Followed()
+		{
+			// The tooltip is set on a second element while it is open for the first one, then removed from the first:
+			// changes to the first element's DataContext must no longer reach it, as on WinUI.
+			var first = new Button { Content = "first", DataContext = "First" };
+			var second = new Button { Content = "second", DataContext = "Second" };
+			var SUT = new ToolTip { Content = "tooltip" };
+			ToolTipService.SetToolTip(first, SUT);
+
+			try
+			{
+				TestServices.WindowHelper.WindowContent = new StackPanel { Children = { first, second } };
+				await TestServices.WindowHelper.WaitForLoaded(second);
+
+				SUT.IsOpen = true;
+				await TestServices.WindowHelper.WaitForIdle();
+				Assert.AreEqual("First", SUT.DataContext);
+
+				ToolTipService.SetToolTip(second, SUT);
+				SUT.IsOpen = false;
+				await TestServices.WindowHelper.WaitForIdle();
+
+				ToolTipService.SetToolTip(first, null);
+				first.DataContext = "First2";
+				await TestServices.WindowHelper.WaitForIdle();
+				Assert.AreNotEqual("First2", SUT.DataContext, "The tooltip still follows an element it is no longer set on.");
+			}
+			finally
+			{
+				SUT.IsOpen = false;
+#if HAS_UNO
+				VisualTreeHelper.CloseAllPopups(TestServices.WindowHelper.XamlRoot);
+#endif
+				TestServices.WindowHelper.WindowContent = null;
+			}
+		}
+
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/24557")]
+		public async Task When_Local_DataContext_Cleared_After_Close_Then_Not_Kept()
+		{
+			// A DataContext set on the tooltip itself must not outlive it: closing must not copy it into the DataContext
+			// the owner provides. Set after registering, since WinUI's ToolTipService writes the owner's DataContext over
+			// the tooltip's when it registers the tooltip.
+			var owner = new Button { Content = "owner", DataContext = "Owner" };
+			var SUT = new ToolTip { Content = "tooltip" };
+			ToolTipService.SetToolTip(owner, SUT);
+
+			try
+			{
+				TestServices.WindowHelper.WindowContent = owner;
+				await TestServices.WindowHelper.WaitForLoaded(owner);
+				SUT.DataContext = "Local";
+
+				SUT.IsOpen = true;
+				await TestServices.WindowHelper.WaitForIdle();
+				Assert.AreEqual("Local", SUT.DataContext);
+
+				SUT.IsOpen = false;
+				await TestServices.WindowHelper.WaitForIdle();
+				await TestServices.WindowHelper.WaitFor(() => SUT.Parent is null, timeoutMS: 3000, message: "The popup kept the closed tooltip.");
+				Assert.AreEqual("Local", SUT.DataContext);
+
+				// Once cleared, WinUI has no DataContext until the owner's changes, and Uno shows the owner's; neither keeps it.
+				SUT.ClearValue(FrameworkElement.DataContextProperty);
+				await TestServices.WindowHelper.WaitForIdle();
+				Assert.AreNotEqual("Local", SUT.DataContext, "The tooltip's own DataContext outlived it.");
+
+				owner.DataContext = "Owner2";
+				await TestServices.WindowHelper.WaitForIdle();
+				Assert.AreEqual("Owner2", SUT.DataContext);
+			}
+			finally
+			{
+				SUT.IsOpen = false;
+#if HAS_UNO
+				VisualTreeHelper.CloseAllPopups(TestServices.WindowHelper.XamlRoot);
+#endif
+				TestServices.WindowHelper.WindowContent = null;
+			}
+		}
+
+		[TestMethod]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.NativeWinUI)] // WinUI writes the owner's DataContext over the binding when the owner's changes.
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/24557")]
+		public async Task When_DataContext_Bound_Then_Bound_To_Owner_Across_Close()
+		{
+			// A tooltip DataContext bound to a property of the owner's must keep resolving against the owner's DataContext,
+			// not against its own result, across opening (Opened handlers included), closing and reopening.
+			var owner = new Button { Content = "owner" };
+			var SUT = new ToolTip { Content = "tooltip" };
+			ToolTipService.SetToolTip(owner, SUT);
+			object openedDataContext = null;
+			SUT.Opened += (_, _) => openedDataContext = SUT.DataContext;
+
+			try
+			{
+				TestServices.WindowHelper.WindowContent = owner;
+				await TestServices.WindowHelper.WaitForLoaded(owner);
+				SUT.SetBinding(FrameworkElement.DataContextProperty, new Binding { Path = new PropertyPath(nameof(ToolTipDataContextViewModel.Child)) });
+				owner.DataContext = new ToolTipDataContextViewModel { Child = "OwnerChild" };
+				await TestServices.WindowHelper.WaitForIdle();
+
+				for (var i = 0; i < 2; i++)
+				{
+					openedDataContext = null;
+					SUT.IsOpen = true;
+					await TestServices.WindowHelper.WaitForIdle();
+					Assert.AreEqual("OwnerChild", openedDataContext, $"Opened #{i + 1}");
+					Assert.AreEqual("OwnerChild", SUT.DataContext, $"Open #{i + 1}");
+
+					SUT.IsOpen = false;
+					await TestServices.WindowHelper.WaitForIdle();
+					Assert.AreEqual("OwnerChild", SUT.DataContext, $"Closed #{i + 1}");
 				}
 			}
 			finally
@@ -1073,5 +1204,11 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				popups[i].IsOpen = false;
 			}
 		}
+	}
+
+	[Bindable]
+	public partial class ToolTipDataContextViewModel
+	{
+		public object Child { get; set; }
 	}
 }

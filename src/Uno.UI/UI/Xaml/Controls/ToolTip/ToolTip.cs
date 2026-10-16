@@ -41,6 +41,13 @@ namespace Microsoft.UI.Xaml.Controls
 		// only positions the tooltip; the DataContext comes from the container, as in WinUI.
 		private FrameworkElement? _container;
 
+		// The elements whose theme and DataContext changes are followed while the tooltip is open. The anchor and the
+		// container can be replaced in the meantime (the tooltip set on another element), so closing unsubscribes from these.
+#if UNO_HAS_ENHANCED_LIFECYCLE
+		private FrameworkElement? _themeSource;
+#endif
+		private FrameworkElement? _dataContextSource;
+
 		internal Popup Popup
 		{
 			get
@@ -195,19 +202,15 @@ namespace Microsoft.UI.Xaml.Controls
 
 			if (actualParent is null || ReferenceEquals(actualParent, Popup.PopupPanel))
 			{
-				// Captured before any parenting: joining the popup panel inherits the panel's own
-				// DataContext, and the one the owner provides through ToolTipService.ToolTip must win.
-				var ownerDataContext = DataContext;
+				// Captured before any parenting: joining the popup panel inherits the panel's own DataContext, and the
+				// one the owner provides through ToolTipService.ToolTip must win. Only the inherited value is carried
+				// over; a DataContext set or bound on the tooltip itself sits above it.
+				var ownerDataContext = ((IDependencyObjectStoreProvider)this).Store.ReadInheritedValueOrDefaultValue(DataContextProperty);
 
-				if (!ReferenceEquals(Popup.Child, this))
-				{
-					Popup.Child = this;
-				}
-
-				// Layout invalidations raised by the tooltip content (an image whose bitmap arrives after the
-				// tooltip opened, for instance) reach the layout root through the parent chain, so the popup
-				// panel has to stay the parent while the tooltip is showing.
-				this.SetParent(Popup.PopupPanel);
+				// Popup.Child adds the tooltip to the popup panel, which stays its parent while it is showing: layout
+				// invalidations raised by the tooltip content (an image whose bitmap arrives after the tooltip opened,
+				// for instance) reach the layout root through the parent chain.
+				Popup.Child = this;
 				this.SetValue(DataContextProperty, ownerDataContext, DependencyPropertyValuePrecedences.Inheritance);
 			}
 			else if (!ReferenceEquals(Parent, _popup))
@@ -218,18 +221,19 @@ namespace Microsoft.UI.Xaml.Controls
 
 		private void DetachFromPopup()
 		{
-			// Leave the popup panel's inheritance so the tooltip is a free-standing value of the
-			// owner's ToolTipService.ToolTip property again, as it was before it opened.
+			// Leave the popup panel's inheritance so the tooltip is a free-standing value of the owner's
+			// ToolTipService.ToolTip property again, as it was before it opened. That property's default
+			// metadata (ValueInheritsDataContext) is what pushes the owner's DataContext changes to a closed tooltip.
 			if (_popup is not null && ReferenceEquals(this.GetParent(), _popup.PopupPanel))
 			{
 				// Leaving the parent drops the inherited DataContext, and the owner only pushes its own
 				// again when it changes: keep it, so the closed tooltip's bindings stay resolved.
-				var dataContext = DataContext;
+				var inheritedDataContext = ((IDependencyObjectStoreProvider)this).Store.ReadInheritedValueOrDefaultValue(DataContextProperty);
 
-				// As in WinUI's ToolTip::Close, the popup lets go of the tooltip, so Parent is null while closed.
+				// As in WinUI's ToolTip::Close, the popup lets go of the tooltip, which takes it out of the
+				// popup panel: Parent is null while closed.
 				_popup.Child = null;
-				this.SetParent(null);
-				this.SetValue(DataContextProperty, dataContext, DependencyPropertyValuePrecedences.Inheritance);
+				this.SetValue(DataContextProperty, inheritedDataContext, DependencyPropertyValuePrecedences.Inheritance);
 			}
 		}
 
@@ -243,22 +247,26 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 			if (GetDataContextOwner() is { } dataContextOwner)
 			{
+				_dataContextSource = dataContextOwner;
 				dataContextOwner.DataContextChanged += OnOwnerDataContextChanged;
 			}
 		}
 
 		private void UnsubscribeOwnerDataContextChanged()
 		{
-			if (GetDataContextOwner() is { } dataContextOwner)
+			if (_dataContextSource is { } dataContextSource)
 			{
-				dataContextOwner.DataContextChanged -= OnOwnerDataContextChanged;
+				_dataContextSource = null;
+				dataContextSource.DataContextChanged -= OnOwnerDataContextChanged;
 			}
 		}
 
 		private void OnOwnerDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
 		{
 			// While showing, the tooltip is parented to the popup panel, so the owner's DataContext no
-			// longer reaches it through ToolTipService.ToolTip; forward the changes explicitly.
+			// longer reaches it through ToolTipService.ToolTip; forward the changes explicitly. WinUI's ToolTip has
+			// no such handler, yet an open WinUI tooltip follows its owner too (Given_ToolTip's DataContext tests
+			// also run on native WinUI).
 			this.SetValue(DataContextProperty, args.NewValue, DependencyPropertyValuePrecedences.Inheritance);
 		}
 
@@ -268,16 +276,17 @@ namespace Microsoft.UI.Xaml.Controls
 			var ownerFe = GetOwnerFrameworkElement();
 			if (ownerFe is not null)
 			{
+				_themeSource = ownerFe;
 				ownerFe.ActualThemeChanged += OnOwnerActualThemeChanged;
 			}
 		}
 
 		private void UnsubscribeOwnerThemeChanged()
 		{
-			var ownerFe = GetOwnerFrameworkElement();
-			if (ownerFe is not null)
+			if (_themeSource is { } themeSource)
 			{
-				ownerFe.ActualThemeChanged -= OnOwnerActualThemeChanged;
+				_themeSource = null;
+				themeSource.ActualThemeChanged -= OnOwnerActualThemeChanged;
 			}
 		}
 
