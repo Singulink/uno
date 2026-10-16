@@ -1,7 +1,7 @@
 ﻿> [!IMPORTANT]
 > **This is Singulink's custom build of Uno Platform 6.8, not the official Uno repository.**
 >
-> Branch `custom/6.8` is the official Uno.WinUI `6.8.0-dev.212` plus fixes our apps need that Uno hasn't released yet. Apps keep referencing the published packages, and the custom build replaces their files in a machine's NuGet cache. See the [setup guide](build/Custom-Uno-Build.md) for how to set up a machine, publish the build and work on it.
+> Branch `custom/6.8` is the official Uno.WinUI `6.8.0-dev.222` plus fixes our apps need that Uno hasn't released yet. Apps keep referencing the published packages, and the custom build replaces their files in a machine's NuGet cache. See the [setup guide](build/Custom-Uno-Build.md) for how to set up a machine, publish the build and work on it.
 >
 > For Uno Platform itself, go to [unoplatform/uno](https://github.com/unoplatform/uno).
 
