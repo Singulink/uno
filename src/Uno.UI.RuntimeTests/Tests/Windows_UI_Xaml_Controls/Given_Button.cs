@@ -587,6 +587,7 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			await WindowHelper.WaitFor(() => asyncTaskCompleted, timeoutMS: 2000);
 		}
 
+#if HAS_UNO
 #if !HAS_INPUT_INJECTOR
 		[Ignore("InputInjector is not supported on this platform.")]
 #endif
@@ -612,12 +613,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			try
 			{
 				finger.Press(buttonRect.GetCenter());
-				// Hold longer than the Holding gesture threshold so the context flyout opens from the hold.
-				await Task.Delay(1200);
-				await WindowHelper.WaitForIdle();
+				await WindowHelper.WaitFor(() => flyoutOpened == 1, timeoutMS: 5000, message: "The context flyout should open from the hold, before the release");
 
 				Assert.AreEqual(1, holding, "The hold should be recognized before the release");
-				Assert.AreEqual(1, flyoutOpened, "The context flyout should open from the hold, before the release");
 
 				finger.Release();
 				await WindowHelper.WaitForIdle();
@@ -662,11 +660,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			try
 			{
 				finger.Press(buttonRect.GetCenter());
-				// Past the Holding gesture threshold (800 ms), but before the 500 ms delay of the menu on a pannable element.
-				await Task.Delay(1000);
-				await WindowHelper.WaitForIdle();
+				// Release once the hold is recognized, within the 500 ms the menu of a hold on a pannable element is delayed by.
+				await WindowHelper.WaitFor(() => holding == 1, timeoutMS: 5000, message: "The hold should be recognized before the release");
 
-				Assert.AreEqual(1, holding, "The hold should be recognized before the release");
 				Assert.AreEqual(0, flyoutOpened, "The context flyout of a hold on a pannable element is delayed");
 
 				finger.Release();
@@ -708,11 +704,7 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			try
 			{
 				finger.Press(buttonRect.GetCenter());
-				// Holding threshold (800 ms) + delay of the menu on a pannable element (500 ms), with margin.
-				await Task.Delay(1800);
-				await WindowHelper.WaitForIdle();
-
-				Assert.AreEqual(1, flyoutOpened, "The delayed context flyout should open while still holding");
+				await WindowHelper.WaitFor(() => flyoutOpened == 1, timeoutMS: 5000, message: "The delayed context flyout should open while still holding");
 
 				finger.Release();
 				await WindowHelper.WaitForIdle();
@@ -762,5 +754,6 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				VisualTreeHelper.CloseAllPopups(WindowHelper.XamlRoot);
 			}
 		}
+#endif
 	}
 }

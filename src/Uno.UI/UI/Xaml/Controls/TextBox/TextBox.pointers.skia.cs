@@ -27,9 +27,10 @@ public partial class TextBox
 	// True while an iOS-convention touch caret-drag is in progress (started by a long-press): the caret
 	// follows the finger until release. See BeginTouchCaretDrag / OnContextRequestedImpl.
 	private bool _touchCaretDrag;
-	// True once the current touch press was handled as a hold when the hold started (OnHolding): the delayed
-	// ContextRequested the ContextMenuProcessor raises for the same hold, and the release, are then not a new gesture.
-	// Only the next press or the release ends it: losing the capture mid-hold doesn't re-arm that delayed request.
+	// True once the current touch press was handled as a hold when the hold started (OnHolding), including a hold that
+	// couldn't take focus and so did nothing: the delayed ContextRequested the ContextMenuProcessor raises for the same
+	// hold, and the release, are then not a new gesture.
+	// Reset by the next press and by the release of the press; after a capture loss it lasts until the next press.
 	private bool _touchHoldHandled;
 
 	protected override void OnPointerMoved(PointerRoutedEventArgs e)
@@ -96,6 +97,14 @@ public partial class TextBox
 	protected override void OnRightTapped(RightTappedRoutedEventArgs e)
 	{
 		base.OnRightTapped(e);
+
+		if (_isSkiaTextBox && e.PointerDeviceType == PointerDeviceType.Touch && TouchSelectionConvention != TouchTextSelectionConvention.Desktop)
+		{
+			// A touch right-tap is the release of a hold, which these conventions handled when it started (OnHolding):
+			// moving the caret to the press point here would undo an iOS caret drag. WinUI's CTextBoxBase::OnRightTapped
+			// doesn't move the caret on a touch right-tap either.
+			return;
+		}
 
 		var displayBlock = TextBoxView.DisplayBlock;
 		var position = e.GetPosition(displayBlock);
@@ -364,18 +373,30 @@ public partial class TextBox
 	{
 		base.OnHolding(e);
 
-		if (_isSkiaTextBox
-			&& e.HoldingState == HoldingState.Started
-			&& e.PointerDeviceType == PointerDeviceType.Touch
-			&& TouchSelectionConvention != TouchTextSelectionConvention.Desktop)
+		if (!_isSkiaTextBox
+			|| e.HoldingState != HoldingState.Started
+			|| e.PointerDeviceType != PointerDeviceType.Touch
+			|| TouchSelectionConvention == TouchTextSelectionConvention.Desktop)
 		{
-			// Touch defers focus to the release (ShouldFocusOnPointerPressed); the hold acts now, so take it now, or the
-			// selection/caret-drag starts unfocused (not rendered) and the focus taken on release resets the caret mode.
-			Focus(FocusState.Pointer);
-
-			HandleTouchHold(e.GetPosition(TextBoxView.DisplayBlock), e.GetPosition(this));
-			_touchHoldHandled = true;
+			return;
 		}
+
+		var displayBlockPoint = e.GetPosition(TextBoxView.DisplayBlock);
+		var textBoxPoint = e.GetPosition(this);
+
+		// Touch defers focus to the release (ShouldFocusOnPointerPressed), but the hold acts now: unfocused, the selection
+		// or caret drag isn't rendered. Pointer focus is also taken when focused another way (keyboard): the release would
+		// take it otherwise, and that focus state change resets the caret mode the hold set.
+		// As in WinUI's TextSelectionManager::OnHolding (selectable text), a hold that can't take focus doesn't act. It is
+		// still handled: these conventions replace the context flyout, so the delayed ContextRequested of the hold must
+		// neither act unfocused nor open the flyout.
+		_touchHoldHandled = true;
+		if (FocusState != FocusState.Pointer && !Focus(FocusState.Pointer))
+		{
+			return;
+		}
+
+		HandleTouchHold(displayBlockPoint, textBoxPoint);
 	}
 
 	// On iOS/Android a touch-and-hold does native text selection instead of opening a context menu (see
