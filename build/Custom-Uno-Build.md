@@ -4,7 +4,7 @@ Our apps run on a custom build of Uno Platform 6.8. It contains fixes they need 
 
 - **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
 - **Branch:** `custom/6.8`
-- **Based on:** the official Uno.WinUI `6.8.0-dev.222`, which is commit `324a97b766` on Uno's `servicing/6.8` branch
+- **Based on:** `Uno.Sdk` `6.8.0-dev.66`, that is the official Uno.WinUI `6.8.0-dev.222`, which is commit `324a97b766` on Uno's `servicing/6.8` branch
 - **Publish script:** [`build/Publish-NuGetCacheOverride.ps1`](Publish-NuGetCacheOverride.ps1)
 
 ## How apps pick up the custom build
@@ -185,7 +185,7 @@ When the apps move to a newer `Uno.Sdk` 6.8 build, the custom build moves to the
    ```
 
    Fixes this branch ported early, and that Uno has released since, usually merge as the same change. Resolve any conflicts, then check what upstream changed in the areas the branch's fixes touch, for example with `git log <previous base>..<commit> -- <folder>`. A clean merge can still change behavior around a fix.
-3. **Update the version.** Set the default of `-Version` in the script, the "Based on" line at the top of this guide and the version in the notice at the top of the repository's `README.md`. Also replace the old version number elsewhere in this guide.
+3. **Update the version.** Set the default of `-Version` in the script, the "Based on" line at the top of this guide and the `Uno.Sdk` and Uno.WinUI versions in the notice at the top of the repository's `README.md`. Also replace the old version number elsewhere in this guide.
 4. **Move all the apps together.** Update `Uno.Sdk` in each app's `global.json`, restore, run the publish script, then rebuild and retest the apps. An app still on the old `Uno.Sdk` restores the old Uno version and quietly builds with the stock packages. To keep one on the old version for a while, publish the previous commit for it too: `-Ref <commit> -Version <old version>`.
 
 ## Going back to the official packages
