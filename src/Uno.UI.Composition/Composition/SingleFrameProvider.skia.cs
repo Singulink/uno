@@ -27,6 +27,8 @@ internal sealed class SingleFrameProvider : IFrameProvider
 
 	public SKImage? CurrentImage => _image;
 
+	public long ByteCount => _bytes;
+
 	public void Dispose()
 	{
 		lock (_lock)

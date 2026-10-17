@@ -190,6 +190,12 @@ namespace Microsoft.UI.Xaml.Media
 		{
 			UnloadImageData();
 			DisposePartial();
+
+#if __CROSSRUNTIME__
+			// What still displays the source keeps its pixels until the source is opened again for it. UnloadImageData's
+			// other callers change the source and open the new one themselves (InvalidateSource), once it is set.
+			ReopenForSubscribers();
+#endif
 		}
 
 		private Uri? _absoluteUri;
@@ -218,7 +224,6 @@ namespace Microsoft.UI.Xaml.Media
 #if __ANDROID__ || __APPLE_UIKIT__
 			_imageData = ImageData.Empty;
 #else
-			// A UriSource change on an opened bitmap included: the previous decode is shown by nothing anymore.
 			ReleaseImageData();
 #endif
 		}

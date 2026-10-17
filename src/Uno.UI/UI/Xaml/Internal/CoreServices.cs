@@ -64,9 +64,12 @@ namespace Uno.UI.Xaml.Core
 			return null;
 		}
 
+		// Frames are requested only while the first root has bounds.
+		internal static bool HasRootWithBounds() => GetXamlRoot() is { Bounds: { Width: not 0, Height: not 0 } };
+
 		internal static void RequestAdditionalFrame()
 		{
-			if (GetXamlRoot() is { Bounds: { Width: not 0, Height: not 0 } } &&
+			if (HasRootWithBounds() &&
 				Interlocked.CompareExchange(ref _isAdditionalFrameRequested, 1, 0) == 0)
 			{
 				// This lambda is intentionally static. It shouldn't capture anything to avoid allocations.
@@ -77,6 +80,8 @@ namespace Uno.UI.Xaml.Core
 		private static void OnTick()
 		{
 			_isAdditionalFrameRequested = 0;
+
+			PendingImageReleases.OnLayoutPassStarting();
 
 			// NOTE: The below code should really be replaced with just this:
 			// ----------------------------
@@ -124,6 +129,9 @@ namespace Uno.UI.Xaml.Core
 				(root.XamlRoot?.Content?.Visual.CompositionTarget as CompositionTarget)?.OnRenderFrameOpportunity();
 #endif
 			}
+
+			// Loaded has been raised for what this pass brought back into the tree: release the undisplayed images now due.
+			PendingImageReleases.OnLayoutPassCompleted();
 		}
 #endif
 

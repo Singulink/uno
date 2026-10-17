@@ -97,7 +97,13 @@ namespace Microsoft.UI.Composition
 			}
 			else if (TryGetSkiaCompositionSurface(Surface, out var scs))
 			{
-				var backgroundArea = GetArrangedImageRect(new Size(scs.Image!.Width, scs.Image.Height), bounds);
+				// Null once the surface has released its frames, for an image nothing displays.
+				if (scs.Image is not { } image)
+				{
+					return;
+				}
+
+				var backgroundArea = GetArrangedImageRect(new Size(image.Width, image.Height), bounds);
 
 				if (backgroundArea.Width <= 0 || backgroundArea.Height <= 0)
 				{
@@ -112,8 +118,8 @@ namespace Microsoft.UI.Composition
 				// 	* Project the transformed output onto the area to paint.
 				// 	* Apply the brush’s Transform, if it has one.
 				var matrix = Matrix3x2.Identity;
-				matrix *= Matrix3x2.CreateScale((float)(backgroundArea.Width / scs.Image!.Width),
-					(float)(backgroundArea.Height / scs.Image.Height));
+				matrix *= Matrix3x2.CreateScale((float)(backgroundArea.Width / image.Width),
+					(float)(backgroundArea.Height / image.Height));
 				matrix *= Matrix3x2.CreateTranslation((float)backgroundArea.Left, (float)backgroundArea.Top);
 				matrix *= TransformMatrix;
 				matrix *= Matrix3x2.CreateScale(bounds.Width, bounds.Height).Inverse();
@@ -140,7 +146,7 @@ namespace Microsoft.UI.Composition
 				// the downscaling ratio is too big. Linear filtering with mipmapping is mostly okay but in the most
 				// extreme cases with tons of images it's quite a bit slower than a linear filter without improving
 				// the output that much.
-				canvas.DrawImage(scs.Image, 0, 0, new SKSamplingOptions(SKFilterMode.Linear), _tempPaint);
+				canvas.DrawImage(image, 0, 0, new SKSamplingOptions(SKFilterMode.Linear), _tempPaint);
 				canvas.Restore();
 			}
 		}

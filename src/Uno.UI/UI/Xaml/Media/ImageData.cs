@@ -1,7 +1,6 @@
 ﻿#nullable enable
 
 using System;
-using System.Threading;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml.Media;
 
@@ -43,16 +42,7 @@ internal partial struct ImageData
 		NativeImage = uiImage ?? throw new ArgumentNullException(nameof(uiImage));
 	}
 #elif __SKIA__
-	/// <summary>
-	/// Number of decoded surfaces produced; for tests.
-	/// </summary>
-	internal static int CompositionSurfacesCreatedForTesting;
-
-	public static ImageData FromCompositionSurface(SkiaCompositionSurface compositionSurface)
-	{
-		Interlocked.Increment(ref CompositionSurfacesCreatedForTesting);
-		return new(compositionSurface);
-	}
+	public static ImageData FromCompositionSurface(SkiaCompositionSurface compositionSurface) => new(compositionSurface);
 
 	private ImageData(SkiaCompositionSurface compositionSurface)
 	{

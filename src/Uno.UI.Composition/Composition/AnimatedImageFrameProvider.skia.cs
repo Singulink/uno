@@ -59,6 +59,8 @@ internal sealed class AnimatedImageFrameProvider : IFrameProvider
 
 	public SKImage? CurrentImage => _images[_currentFrame];
 
+	public long ByteCount => _memoryPressure;
+
 	private int GetCurrentFrameIndex()
 	{
 		var currentTimestampInMilliseconds = _stopwatch!.ElapsedMilliseconds % _totalDuration;

@@ -12,12 +12,22 @@ namespace Microsoft.UI.Xaml.Controls
 {
 	partial class Image : FrameworkElement
 	{
+		// What an SvgImageSource needs released: it draws through a child canvas, not through a subscription.
 		private readonly SerialDisposable _sourceDisposable = new SerialDisposable();
+		private ImageSource.Subscription _subscription;
+
+		// Changes whenever _subscription is set or released, so a Subscribe that the app superseded meanwhile is noticed.
+		private int _subscriptionVersion;
 		private Size _lastMeasuredSize;
 		private SkiaCompositionSurface _currentSurface;
 		private CompositionSurfaceBrush _surfaceBrush;
 		private readonly SpriteVisual _imageSprite;
 		private ImageData? _pendingImageData;
+		private int _pendingImageVersion;
+
+		// The SourceVersion of Source that ImageOpened was raised for: WinUI raises it once per source, so the data
+		// delivered again when the Image re-enters the tree, or decoded again after its release, raises nothing.
+		private int? _imageOpenedVersion;
 
 		public Image()
 		{
@@ -30,10 +40,15 @@ namespace Microsoft.UI.Xaml.Controls
 			// We clear the old image first. We do NOT wait for the new image to load
 			// for it to replace the old one. This is what happens on WinUI.
 			_sourceDisposable.Disposable = null;
-			_lastMeasuredSize = default;
+
+			// The sprite lets go of the surface before the subscription can release it.
 			_imageSprite.Brush = null;
 			_currentSurface = null;
 			_pendingImageData = null;
+			_imageOpenedVersion = null;
+			_subscription?.Applied(ImageData.Empty);
+			ReleaseSubscription();
+			_lastMeasuredSize = default;
 			InvalidateMeasure();
 
 			if (newValue is SvgImageSource svgImageSource)
@@ -77,12 +92,42 @@ namespace Microsoft.UI.Xaml.Controls
 
 		private void InitializeImageSource(ImageSource source)
 		{
-			_sourceDisposable.Disposable = source.Subscribe(img =>
-			{
-				_pendingImageData = img;
+			// Back in the tree, the sprite still draws _currentSurface (see OnUnloaded). What it is given is drawn once
+			// measured, and acknowledged then (TryProcessPendingSource).
+			var version = ++_subscriptionVersion;
+			var shown = _currentSurface;
+			var subscription = source.Subscribe(
+				img =>
+				{
+					_pendingImageData = img;
+					_pendingImageVersion = source.SourceVersion;
 
-				InvalidateMeasure();
-			});
+					InvalidateMeasure();
+				},
+				shown: shown,
+				appliedOnDelivery: false);
+
+			if (version == _subscriptionVersion)
+			{
+				_subscription = subscription;
+				return;
+			}
+
+			// Subscribing ran app code (opening a completed cache entry raises BitmapImage.ImageOpened at once) that changed
+			// the source or unloaded this Image, which by now has the subscription it needs, if any.
+			if (!ReferenceEquals(_currentSurface, shown))
+			{
+				subscription.Applied(ImageData.Empty);
+			}
+
+			subscription.Dispose();
+		}
+
+		private void ReleaseSubscription()
+		{
+			_subscriptionVersion++;
+			_subscription?.Dispose();
+			_subscription = null;
 		}
 
 		protected override Size MeasureOverride(Size availableSize)
@@ -135,6 +180,7 @@ namespace Microsoft.UI.Xaml.Controls
 		private void TryProcessPendingSource()
 		{
 			var currentData = _pendingImageData;
+			var version = _pendingImageVersion;
 			_pendingImageData = null;
 			if (currentData is null)
 			{
@@ -144,13 +190,21 @@ namespace Microsoft.UI.Xaml.Controls
 
 			var processedData = currentData.Value;
 
+			// The sprite draws this from now on: what it drew before can go once nothing else draws it.
+			_subscription?.Applied(processedData);
+
 			if (processedData.HasData)
 			{
 				_currentSurface = processedData.CompositionSurface;
 				_surfaceBrush = Visual.Compositor.CreateSurfaceBrush(_currentSurface);
 				_surfaceBrush.MonochromeColor = MonochromeColor?.ToSKColor();
 				_imageSprite.Brush = _surfaceBrush;
-				ImageOpened?.Invoke(this, new RoutedEventArgs(this));
+
+				if (_imageOpenedVersion != version)
+				{
+					_imageOpenedVersion = version;
+					ImageOpened?.Invoke(this, new RoutedEventArgs(this));
+				}
 			}
 			else if (processedData is { Kind: ImageDataKind.Empty })
 			{
@@ -160,6 +214,11 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 			else if (processedData is { Kind: ImageDataKind.Error })
 			{
+				// A source that failed to open shows nothing, not the image it had before: WinUI drops its surfaces
+				// (MUX Reference: CImageSource::FireImageFailed, imagesource.cpp), as the source releases data it owns.
+				_currentSurface = null;
+				_imageSprite.Brush = null;
+
 				ImageFailed?.Invoke(this, new(
 					this,
 					processedData.Error?.Message ?? "Unknown error"));
@@ -208,10 +267,11 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 			base.OnLoaded();
 
-			// The subscription was released on unload: subscribe again, which decodes the source again.
-			if (_sourceDisposable.Disposable is null && Source is { } source)
+			// The subscription was released on unload: subscribe again. A source that kept its data (shared through the
+			// cache, or not yet released) delivers it at once; one that released it decodes it again.
+			if (_subscription is null && Source is { } source and not SvgImageSource)
 			{
-				OnSourceChanged(source, forceReload: false);
+				InitializeImageSource(source);
 			}
 		}
 
@@ -219,12 +279,10 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 			base.OnUnloaded();
 
-			// Nothing displays this image while it is unloaded, so its subscription is released, which lets the source release
-			// its decoded pixels; the sprite must not keep pointing at them.
-			_imageSprite.Brush = null;
-			_currentSurface = null;
+			// Released so the source can let go of its pixels once they have waited (PendingImageReleases). The sprite keeps
+			// its brush: it is not drawn off the tree, and an Image back in time still has them. Data not yet drawn is dropped.
 			_pendingImageData = null;
-			_sourceDisposable.Disposable = null;
+			ReleaseSubscription();
 		}
 
 		partial void OnMonochromeColorChanged()

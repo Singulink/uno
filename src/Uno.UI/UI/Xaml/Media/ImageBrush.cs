@@ -17,7 +17,9 @@ namespace Microsoft.UI.Xaml.Media
 {
 	public partial class ImageBrush : Brush
 	{
+#if !__CROSSRUNTIME__
 		private readonly SerialDisposable _sourceDisposable = new SerialDisposable();
+#endif
 
 #pragma warning disable CS0067 // The event 'ImageBrush.ImageFailed' is never used
 		public event RoutedEventHandler ImageOpened;
@@ -79,6 +81,9 @@ namespace Microsoft.UI.Xaml.Media
 
 		private void OnSourceChanged(ImageSource newValue, ImageSource oldValue)
 		{
+#if !__CROSSRUNTIME__
+			// The native brushes load the image themselves, so they load it again for a new UriSource. Elsewhere the brush
+			// keeps its one subscription across UriSource changes, as the source opens again for its subscribers.
 			if (newValue is BitmapImage bitmapImage)
 			{
 				_sourceDisposable.Disposable = bitmapImage.RegisterDisposablePropertyChangedCallback(
@@ -97,6 +102,7 @@ namespace Microsoft.UI.Xaml.Media
 			{
 				_sourceDisposable.Disposable = null;
 			}
+#endif
 
 			OnSourceChangedPartial(newValue, oldValue);
 		}

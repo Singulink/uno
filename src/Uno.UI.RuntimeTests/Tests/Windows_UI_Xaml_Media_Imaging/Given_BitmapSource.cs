@@ -530,7 +530,18 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Media_Imaging
 			image.Source = bitmapImage;
 			WindowHelper.WindowContent = image;
 
-			await WindowHelper.WaitFor(() => imageFailed || opened, message: "The image neither failed nor opened.");
+			if (useAsync)
+			{
+				// The source failed already and is not opened again for an Image that attaches to it, which raises nothing,
+				// as on WinUI.
+				await WindowHelper.WaitForLoaded(image);
+				await WindowHelper.WaitForIdle();
+				Assert.IsFalse(imageFailed, "An Image that attaches to a source that already failed is not told about it.");
+			}
+			else
+			{
+				await WindowHelper.WaitFor(() => imageFailed || opened, message: "The image neither failed nor opened.");
+			}
 
 			Assert.IsFalse(opened, "An undecodable stream should not open.");
 			Assert.IsNotNull(failure, "BitmapImage.ImageFailed should be raised.");

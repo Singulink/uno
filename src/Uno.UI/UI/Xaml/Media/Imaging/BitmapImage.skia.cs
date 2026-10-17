@@ -14,6 +14,64 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 {
 	public sealed partial class BitmapImage : BitmapSource
 	{
+		// WinUI raises ImageOpened once per source, so decoding the same source again after its release raises nothing
+		// (MUX Reference: CImageSource::FireImageOpened, m_publicBitmapEventFired, re-armed by ResetCallbackEvents when
+		// the source is set — imagesource.cpp).
+		private int? _imageOpenedVersion;
+
+		private void RaiseImageOpened(int version)
+		{
+			if (_imageOpenedVersion != version)
+			{
+				_imageOpenedVersion = version;
+				RaiseImageOpened();
+			}
+		}
+
+		// Takes the pixel size of an open's result and raises its event. Setting the size runs property-changed handlers,
+		// which may change the source: that supersedes the open, which then raises nothing and releases what it owns.
+		private ImageData Publish(ImageData imageData, int version, CancellationToken ct)
+		{
+			// Superseded while decoding, or by a size setter's handler: the open that superseded this one may have set its own
+			// size already (from a completed cache entry), which this one must not overwrite.
+			ThrowIfSuperseded(imageData, ct);
+			if (imageData.Kind == ImageDataKind.Error)
+			{
+				PixelWidth = 0;
+				ThrowIfSuperseded(imageData, ct);
+				PixelHeight = 0;
+			}
+			else if (imageData.Kind == ImageDataKind.CompositionSurface)
+			{
+				var image = imageData.CompositionSurface.Image;
+				PixelWidth = image.Width;
+				ThrowIfSuperseded(imageData, ct);
+				PixelHeight = image.Height;
+			}
+
+			ThrowIfSuperseded(imageData, ct);
+
+			if (imageData.Kind == ImageDataKind.Error)
+			{
+				RaiseImageFailed(imageData.Error);
+			}
+			else if (imageData.Kind == ImageDataKind.CompositionSurface)
+			{
+				RaiseImageOpened(version);
+			}
+
+			return imageData;
+		}
+
+		private static void ThrowIfSuperseded(ImageData imageData, CancellationToken ct)
+		{
+			if (ct.IsCancellationRequested)
+			{
+				ReleaseSurface(imageData);
+				throw new OperationCanceledException(ct);
+			}
+		}
+
 		private readonly record struct BitmapImageCacheKey(Uri Uri, int? DecodeWidth, int? DecodeHeight);
 
 		private static readonly LRUCache<BitmapImageCacheKey, Task<ImageData>> _bitmapImageCache = new(FeatureConfiguration.Image.MaxBitmapImageCacheCount);
@@ -66,6 +124,8 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 
 		private async Task<ImageData> TryOpenSourceAsync(CancellationToken ct)
 		{
+			var version = SourceVersion;
+
 			try
 			{
 				var (decodeWidth, decodeHeight) = GetDecodePixelSize();
@@ -105,29 +165,7 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 							throw;
 						}
 
-						if (ct.IsCancellationRequested)
-						{
-							// Superseded while decoding: the result must not be published on a source that moved on, and a
-							// stream load is never shared, so it is this requester's alone to release.
-							ReleaseSurface(imageData);
-							throw new OperationCanceledException(ct);
-						}
-
-						if (imageData.Kind == ImageDataKind.Error)
-						{
-							PixelWidth = 0;
-							PixelHeight = 0;
-							RaiseImageFailed(imageData.Error);
-						}
-						else if (imageData.Kind == ImageDataKind.CompositionSurface)
-						{
-							var image = imageData.CompositionSurface.Image;
-							PixelWidth = image.Width;
-							PixelHeight = image.Height;
-							RaiseImageOpened();
-						}
-
-						return imageData;
+						return Publish(imageData, version, ct);
 					}
 				}
 				else
@@ -224,21 +262,7 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 						throw;
 					}
 
-					if (imageData.Kind == ImageDataKind.Error)
-					{
-						PixelWidth = 0;
-						PixelHeight = 0;
-						RaiseImageFailed(imageData.Error);
-					}
-					else if (imageData.Kind == ImageDataKind.CompositionSurface)
-					{
-						var image = imageData.CompositionSurface.Image;
-						PixelWidth = image.Width;
-						PixelHeight = image.Height;
-						RaiseImageOpened();
-					}
-
-					return imageData;
+					return Publish(imageData, version, ct);
 				}
 			}
 			catch (OperationCanceledException) when (ct.IsCancellationRequested)

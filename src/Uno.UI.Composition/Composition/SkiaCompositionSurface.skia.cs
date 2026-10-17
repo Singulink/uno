@@ -40,6 +40,11 @@ namespace Microsoft.UI.Composition
 
 		public SKImage? Image => FrameProvider?.CurrentImage;
 
+		/// <summary>
+		/// The memory held by the decoded frames, 4 bytes per pixel of each.
+		/// </summary>
+		internal long DecodedByteCount => FrameProvider?.ByteCount ?? 0;
+
 		internal SkiaCompositionSurface(SKImage image)
 		{
 			FrameProvider = FrameProviderFactory.Create(image);
@@ -52,8 +57,7 @@ namespace Microsoft.UI.Composition
 		}
 
 		/// <summary>
-		/// Releases the decoded frames now, for an image nothing displays anymore, instead of leaving them to the finalizer
-		/// (which only runs once the surface has been collected, so the pixels outlive the element by several collections).
+		/// Releases the decoded frames now, for an image nothing displays anymore, instead of leaving them to the finalizer.
 		/// <see cref="Image"/> is null afterwards; loading frames again makes the surface usable.
 		/// </summary>
 		internal void ReleaseFrames() => SetFrameProviderAndOnFrameChanged(null, null);

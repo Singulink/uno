@@ -9,8 +9,16 @@ namespace Microsoft.UI.Composition;
 
 internal static class FrameProviderFactory
 {
+	/// <summary>
+	/// Test hook: receives every image a frame provider is created with, which the provider disposes when it is released.
+	/// </summary>
+	internal static Action<SKImage>? ImageCreatedForTesting { get; set; }
+
 	public static IFrameProvider Create(SKImage image)
-		=> new SingleFrameProvider(image);
+	{
+		ImageCreatedForTesting?.Invoke(image);
+		return new SingleFrameProvider(image);
+	}
 
 	public static bool TryCreate(SKManagedStream stream, Action onFrameChanged, [NotNullWhen(true)] out IFrameProvider? provider)
 		=> TryCreate(stream, onFrameChanged, null, null, out provider);
@@ -53,6 +61,7 @@ internal static class FrameProviderFactory
 			{
 				image.Dispose();
 			}
+			ImageCreatedForTesting?.Invoke(scaled);
 			provider = new SingleFrameProvider(scaled);
 			return true;
 		}
@@ -116,6 +125,14 @@ internal static class FrameProviderFactory
 			{
 				images[i].Dispose();
 				images[i] = scaled;
+			}
+		}
+
+		if (ImageCreatedForTesting is { } onImageCreated)
+		{
+			foreach (var image in images)
+			{
+				onImageCreated(image);
 			}
 		}
 

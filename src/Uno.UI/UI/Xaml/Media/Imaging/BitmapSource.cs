@@ -92,6 +92,7 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 
 #if __CROSSRUNTIME__ || IS_UNIT_TESTS
 			_stream = clonedStreamSource;
+			SourceVersion++;
 			UpdatePixelWidthAndHeightPartial(_stream.CloneStream().AsStream());
 #else
 			Stream = clonedStreamSource.AsStream();
