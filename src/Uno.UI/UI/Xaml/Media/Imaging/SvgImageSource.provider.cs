@@ -38,17 +38,27 @@ partial class SvgImageSource
 
 	private bool TryOpenSvgImageData(out Task<ImageData> asyncImage)
 	{
+		asyncImage = EnsureLoad(out _);
+		return true;
+	}
+
+	/// <summary>
+	/// Returns the load of the current source, starting it if needed, and the token that cancels it when the source
+	/// changes.
+	/// </summary>
+	private Task<ImageData> EnsureLoad(out CancellationToken loadToken)
+	{
 		// The load is shared by every open of this source, so it can't be bound to the token of the open that started
 		// it: SetSourceAsync and a subscribing brush both re-open the source while it loads, cancelling that token.
 		// Like WinUI, only a change of the source itself (UnloadImageSourceData) aborts the load.
-		if (_currentOpenTask is null)
+		if (_currentOpenTask is null || _loadCts is null)
 		{
 			_loadCts = new();
 			_currentOpenTask = LoadSvgImageAsync(_loadCts.Token);
 		}
 
-		asyncImage = _currentOpenTask;
-		return true;
+		loadToken = _loadCts.Token;
+		return _currentOpenTask;
 	}
 
 	private async Task<ImageData> LoadSvgImageAsync(CancellationToken ct)
@@ -68,7 +78,18 @@ partial class SvgImageSource
 
 		if (imageData.Kind == ImageDataKind.ByteArray && imageData.ByteArray is not null)
 		{
-			if (await _svgProvider.TryLoadSvgDataAsync(imageData.ByteArray))
+			bool loaded;
+			try
+			{
+				loaded = await _svgProvider.TryLoadSvgDataAsync(imageData.ByteArray);
+			}
+			catch (OperationCanceledException)
+			{
+				// The source changed while parsing; the provider dropped this document.
+				return ImageData.Empty;
+			}
+
+			if (loaded)
 			{
 				return imageData;
 			}

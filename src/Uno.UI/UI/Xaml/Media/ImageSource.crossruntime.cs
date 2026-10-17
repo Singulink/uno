@@ -617,6 +617,12 @@ namespace Microsoft.UI.Xaml.Media
 			{
 				ScheduleReleaseUnused();
 			}
+
+			// Unless a subscriber changed the source meanwhile, which stopped the delivery.
+			if (_dataVersion == version)
+			{
+				OnPublished();
+			}
 		}
 
 		/// <summary>
@@ -628,6 +634,13 @@ namespace Microsoft.UI.Xaml.Media
 			{
 				Open();
 			}
+		}
+
+		/// <summary>
+		/// Called once every subscriber has received the data of an open.
+		/// </summary>
+		private protected virtual void OnPublished()
+		{
 		}
 	}
 }

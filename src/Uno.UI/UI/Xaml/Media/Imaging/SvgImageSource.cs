@@ -75,6 +75,10 @@ public partial class SvgImageSource : ImageSource
 	/// </returns>
 	public IAsyncOperation<SvgImageSourceLoadStatus> SetSourceAsync(IRandomAccessStream streamSource)
 	{
+#if __SKIA__
+		// Like WinUI, a new stream cancels the operation still pending for the previous one.
+		_setSourceOperation?.Supersede();
+#endif
 		UnloadImageData();
 
 #if __CROSSRUNTIME__
@@ -88,7 +92,17 @@ public partial class SvgImageSource : ImageSource
 				throw new ArgumentException(nameof(streamSource));
 			}
 
-#if __CROSSRUNTIME__
+#if __SKIA__
+			_stream = streamSource.CloneStream();
+
+			// The operation completes from its own load, not from what the source publishes: by then a handler may
+			// already have given the source another stream.
+			var load = EnsureLoad(out var loadToken);
+			var operation = new SetSourceOperation(this, load, loadToken);
+			InvalidateSource();
+
+			return await operation.Task;
+#elif __CROSSRUNTIME__
 			_stream = streamSource.CloneStream();
 
 			var tcs = new TaskCompletionSource<SvgImageSourceLoadStatus>();
@@ -151,6 +165,91 @@ public partial class SvgImageSource : ImageSource
 			Opened?.Invoke(this, new SvgImageSourceOpenedEventArgs());
 		}
 	}
+
+#if __SKIA__
+	// The pending SetSourceAsync of the current load, which completes when that load has been published.
+	private SetSourceOperation? _setSourceOperation;
+
+	private protected override void OnPublished() => _setSourceOperation?.OnPublished();
+
+	/// <summary>
+	/// One SetSourceAsync: pending until its load fails, is replaced (another stream or URI, or the source is disposed),
+	/// or has been published to every element showing the source.
+	/// </summary>
+	private sealed class SetSourceOperation
+	{
+		private readonly TaskCompletionSource<SvgImageSourceLoadStatus> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly SvgImageSource _owner;
+		private readonly Task<ImageData> _load;
+		private readonly CancellationToken _loadToken;
+		private bool _superseded;
+
+		public SetSourceOperation(SvgImageSource owner, Task<ImageData> load, CancellationToken loadToken)
+		{
+			(_owner, _load, _loadToken) = (owner, load, loadToken);
+			owner._setSourceOperation = this;
+
+			// A replacement settles once the call that made it has returned: the source has been reset by then, and a
+			// load that set another stream from its OpenFailed handler has completed, failed.
+			load.ContinueWith(_ => Settle(published: false), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+			loadToken.Register(() => owner.DispatcherQueue.TryEnqueue(() => Settle(published: false)));
+		}
+
+		public Task<SvgImageSourceLoadStatus> Task => _completion.Task;
+
+		public void Supersede() => _superseded = true;
+
+		// Like WinUI, a successful operation completes after the brushes showing the source raised ImageOpened, whose
+		// handler may replace it, and before images do, on their next measure.
+		public void OnPublished()
+		{
+			if (_load.IsCompleted)
+			{
+				Settle(published: true);
+			}
+		}
+
+		// The only way out of pending, taken once: a successful load waits for its publication.
+		private void Settle(bool published)
+		{
+			if (_load.IsCompletedSuccessfully && _load.Result.Error is ArgumentException invalidFormat)
+			{
+				// Like WinUI (E_INVALIDARG), even when an OpenFailed handler has set another stream since.
+				_completion.TrySetException(new ArgumentException(invalidFormat.Message));
+			}
+			else if (_load.IsFaulted)
+			{
+				_completion.TrySetException(_load.Exception!.InnerException!);
+			}
+			else if (!_load.IsCompleted || _loadToken.IsCancellationRequested)
+			{
+				// Replaced. Like WinUI, another SetSourceAsync cancels the operation, while a new UriSource (or the
+				// source's disposal) completes it.
+				if (_superseded)
+				{
+					_completion.TrySetCanceled();
+				}
+				else
+				{
+					_completion.TrySetResult(SvgImageSourceLoadStatus.Success);
+				}
+			}
+			else if (published)
+			{
+				_completion.TrySetResult(_load.Result.HasData ? SvgImageSourceLoadStatus.Success : SvgImageSourceLoadStatus.Other);
+			}
+			else
+			{
+				return;
+			}
+
+			if (_owner._setSourceOperation == this)
+			{
+				_owner._setSourceOperation = null;
+			}
+		}
+	}
+#endif
 
 	internal bool UseRasterized => !double.IsNaN(RasterizePixelWidth) && !double.IsNaN(RasterizePixelHeight);
 

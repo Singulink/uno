@@ -220,10 +220,11 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Media
 
 			using (var redStream = await (await CreateSvgFileAsync("red")).OpenReadAsync())
 			{
-				var load = svgImageSource.SetSourceAsync(redStream).AsTask();
-				await WindowHelper.WaitFor(() => load.IsCompleted && reload is not null, message: "The first load did not complete.");
+				// As on WinUI, the reload cancels the first operation, which completes only after ImageOpened.
+				await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () => await svgImageSource.SetSourceAsync(redStream));
 			}
 
+			Assert.IsNotNull(reload);
 			Assert.AreEqual(SvgImageSourceLoadStatus.Success, await reload);
 			await WindowHelper.WaitForIdle();
 			var screenshot = await UITestHelper.ScreenShot(border2);
@@ -272,6 +273,35 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Media
 			Assert.IsTrue(reloaded);
 			Assert.AreEqual(1, openedBrush);
 			Assert.AreEqual(1, openedImage);
+		}
+
+		[TestMethod]
+		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
+		public async Task When_SvgImageSource_Brush_Attached_While_Loading_Reloads_From_ImageOpened()
+		{
+			// The brush starts showing the source after SetSourceAsync started and before its load ran. A stream set from
+			// its ImageOpened handler still cancels the first operation, as on WinUI.
+			var svgImageSource = new SvgImageSource();
+			var border = new Border { Width = 100, Height = 100 };
+			await UITestHelper.Load(border);
+
+			using var blueStream = await (await CreateSvgFileAsync("blue")).OpenReadAsync();
+			using var redStream = await (await CreateSvgFileAsync("red")).OpenReadAsync();
+			Task<SvgImageSourceLoadStatus> reload = null;
+			var brush = new ImageBrush();
+			brush.ImageOpened += (_, _) => reload ??= svgImageSource.SetSourceAsync(blueStream).AsTask();
+
+			var operation = svgImageSource.SetSourceAsync(redStream).AsTask();
+			brush.ImageSource = svgImageSource;
+			border.Background = brush;
+
+			await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () => await operation);
+			Assert.IsNotNull(reload);
+			Assert.AreEqual(SvgImageSourceLoadStatus.Success, await reload);
+
+			await WindowHelper.WaitForIdle();
+			var screenshot = await UITestHelper.ScreenShot(border);
+			ImageAssert.HasColorAt(screenshot, screenshot.Width / 2, screenshot.Height / 2, Microsoft.UI.Colors.Blue, tolerance: 10);
 		}
 
 		private static async Task<StorageFile> CreateSvgFileAsync(string fill)

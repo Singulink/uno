@@ -34,6 +34,9 @@ public partial class SvgProvider : ISvgProvider
 
 	private SKSvg? _skSvg;
 	private SKBitmap? _skBitmap;
+
+	// Bumped by every load and unload: a parse that a newer one overtook doesn't replace its document.
+	private int _loadVersion;
 #endif
 
 	public SvgProvider(object owner)
@@ -111,15 +114,29 @@ public partial class SvgProvider : ISvgProvider
 #if __NETSTD_REFERENCE__
 		return Task.FromResult(false);
 #else
+		var version = ++_loadVersion;
+		CleanupSvg();
+		var skSvg = await LoadSvgAsync(svgBytes);
+		if (version != _loadVersion)
+		{
+			// A newer load, or the source's unload, overtook this parse: its document must not replace theirs.
+			skSvg?.Dispose();
+			throw new OperationCanceledException();
+		}
+
 		var succeeded = false;
 		try
 		{
-			CleanupSvg();
-			var skSvg = await LoadSvgAsync(svgBytes);
 			if (skSvg is not null)
 			{
 				_skSvg = skSvg;
 				_owner.RaiseImageOpened();
+				if (version != _loadVersion)
+				{
+					// An Opened handler replaced the source.
+					return true;
+				}
+
 				_skBitmap = null;
 				UpdateBitmap();
 				SourceLoaded?.Invoke(this, EventArgs.Empty);
@@ -226,5 +243,11 @@ public partial class SvgProvider : ISvgProvider
 	}
 #endif
 
-	public void Unload() => CleanupSvg();
+	public void Unload()
+	{
+#if !__NETSTD_REFERENCE__
+		_loadVersion++;
+#endif
+		CleanupSvg();
+	}
 }
