@@ -39,6 +39,10 @@ namespace Microsoft.UI.Xaml.Media
 			}
 		}
 
+		// The SVG source ImageOpened was raised for: WinUI raises it together with the source's Opened, so an SVG source
+		// raises it on a brush once. Weak, so that the brush doesn't keep alive a source it no longer shows.
+		private global::System.WeakReference<Imaging.SvgImageSource> _svgImageOpenedFor;
+
 		private void OnSourceOpened(ImageData image)
 		{
 			ImageDataCache = image;
@@ -49,8 +53,13 @@ namespace Microsoft.UI.Xaml.Media
 				//		 so the ImageFailed won't be raised if the url is invalid ...
 				OnImageFailed();
 			}
-			else
+			else if (ImageSource is not Imaging.SvgImageSource svgImageSource)
 			{
+				OnImageOpened();
+			}
+			else if (image.HasData && !(_svgImageOpenedFor is not null && _svgImageOpenedFor.TryGetTarget(out var opened) && ReferenceEquals(opened, svgImageSource)))
+			{
+				_svgImageOpenedFor = new(svgImageSource);
 				OnImageOpened();
 			}
 

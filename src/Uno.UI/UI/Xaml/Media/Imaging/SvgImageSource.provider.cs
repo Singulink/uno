@@ -66,11 +66,15 @@ partial class SvgImageSource
 			return ImageData.Empty;
 		}
 
-		if (imageData.Kind == ImageDataKind.ByteArray &&
-			imageData.ByteArray is not null &&
-			await _svgProvider.TryLoadSvgDataAsync(imageData.ByteArray))
+		if (imageData.Kind == ImageDataKind.ByteArray && imageData.ByteArray is not null)
 		{
-			return imageData;
+			if (await _svgProvider.TryLoadSvgDataAsync(imageData.ByteArray))
+			{
+				return imageData;
+			}
+
+			// An ArgumentException, as WinUI's E_INVALIDARG, which SetSourceAsync rethrows.
+			return ImageData.FromError(new ArgumentException("The content is not a valid SVG document."));
 		}
 
 		return ImageData.Empty;

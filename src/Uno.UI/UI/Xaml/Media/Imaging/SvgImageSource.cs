@@ -18,7 +18,7 @@ namespace Microsoft.UI.Xaml.Media.Imaging;
 /// </summary>
 public partial class SvgImageSource : ImageSource
 {
-	private SvgImageSourceLoadStatus? _lastStatus;
+	private bool _openedRaised;
 
 #if __CROSSRUNTIME__
 	private IRandomAccessStream? _stream;
@@ -88,8 +88,6 @@ public partial class SvgImageSource : ImageSource
 				throw new ArgumentException(nameof(streamSource));
 			}
 
-			_lastStatus = null;
-
 #if __CROSSRUNTIME__
 			_stream = streamSource.CloneStream();
 
@@ -102,9 +100,24 @@ public partial class SvgImageSource : ImageSource
 
 			return await tcs.Task;
 
+			// The outcome comes from the delivered data, not from the source: a handler run for an earlier subscriber may
+			// already have changed the source.
 			void OnChanged(ImageData data)
 			{
-				tcs.TrySetResult(_lastStatus ?? SvgImageSourceLoadStatus.Other);
+				if (data.HasData)
+				{
+					tcs.TrySetResult(SvgImageSourceLoadStatus.Success);
+				}
+				else if (data.Error is ArgumentException invalidFormat)
+				{
+					// Like WinUI, which completes the operation with E_INVALIDARG: OpenFailed reports InvalidFormat, and
+					// awaiting the operation throws.
+					tcs.TrySetException(new ArgumentException(invalidFormat.Message, nameof(streamSource)));
+				}
+				else
+				{
+					tcs.TrySetResult(SvgImageSourceLoadStatus.Other);
+				}
 			}
 #elif IS_UNIT_TESTS
 			return Task.FromResult(SvgImageSourceLoadStatus.Other);
@@ -126,15 +139,17 @@ public partial class SvgImageSource : ImageSource
 	partial void InitPartial();
 
 	internal void RaiseImageFailed(SvgImageSourceLoadStatus loadStatus)
-	{
-		_lastStatus = loadStatus;
-		OpenFailed?.Invoke(this, new SvgImageSourceFailedEventArgs(loadStatus));
-	}
+		=> OpenFailed?.Invoke(this, new SvgImageSourceFailedEventArgs(loadStatus));
 
 	internal void RaiseImageOpened()
 	{
-		_lastStatus = SvgImageSourceLoadStatus.Success;
-		Opened?.Invoke(this, new SvgImageSourceOpenedEventArgs());
+		// Like WinUI, only the first successful load of a source raises Opened: CSvgImageSource fires it while
+		// m_frameIndex is 0, and nothing resets that index for an SVG.
+		if (!_openedRaised)
+		{
+			_openedRaised = true;
+			Opened?.Invoke(this, new SvgImageSourceOpenedEventArgs());
+		}
 	}
 
 	internal bool UseRasterized => !double.IsNaN(RasterizePixelWidth) && !double.IsNaN(RasterizePixelHeight);

@@ -63,7 +63,7 @@ partial class SvgImageSource
 				}
 				else
 				{
-					return ImageData.Empty;
+					return imageData.Kind == ImageDataKind.Error ? imageData : ImageData.Empty;
 				}
 			}, ct);
 			return true;

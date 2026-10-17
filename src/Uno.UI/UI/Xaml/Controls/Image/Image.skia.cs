@@ -68,21 +68,23 @@ namespace Microsoft.UI.Xaml.Controls
 			_svgCanvas = source.GetCanvas();
 			AddChild(_svgCanvas);
 			source.SourceLoaded += OnSvgSourceLoaded;
+			source.Opened += OnSvgSourceOpened;
 			source.OpenFailed += OnSvgSourceFailed;
 			_sourceDisposable.Disposable = Disposable.Create(() =>
 			{
 				RemoveChild(_svgCanvas);
 				source.SourceLoaded -= OnSvgSourceLoaded;
+				source.Opened -= OnSvgSourceOpened;
 				source.OpenFailed -= OnSvgSourceFailed;
 				_svgCanvas = null;
 			});
 		}
 
-		private void OnSvgSourceLoaded(object sender, EventArgs args)
-		{
-			InvalidateMeasure();
-			ImageOpened?.Invoke(this, new RoutedEventArgs(this));
-		}
+		private void OnSvgSourceLoaded(object sender, EventArgs args) => InvalidateMeasure();
+
+		// Like WinUI, an SVG source raises ImageOpened on the images showing it together with its Opened, so once.
+		private void OnSvgSourceOpened(SvgImageSource sender, SvgImageSourceOpenedEventArgs args)
+			=> ImageOpened?.Invoke(this, new RoutedEventArgs(this));
 
 		private void OnSvgSourceFailed(SvgImageSource sender, SvgImageSourceFailedEventArgs args)
 		{
