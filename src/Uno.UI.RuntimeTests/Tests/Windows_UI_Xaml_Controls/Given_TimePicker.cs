@@ -110,17 +110,22 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[DataRow("en-CA", "12HourClock", "5")]
 		[DataRow("ko-KR", "12HourClock", "5")]
 		[DataRow("en-GB", "24HourClock", "17")]
-		public void When_Default_ClockIdentifier_Follows_Culture(string cultureName, string expectedClock, string expectedHour)
+		public void When_Default_ClockIdentifier_Follows_Language(string cultureName, string expectedClock, string expectedHour)
 		{
 			var originalCulture = CultureInfo.CurrentCulture;
+			var originalUICulture = CultureInfo.CurrentUICulture;
+			var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
+			var originalOverride = global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride;
 			try
 			{
-				CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+				// As in WinUI, the clock follows the app language, not CurrentCulture (the regional format).
+				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = cultureName;
+				CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(expectedClock == "12HourClock" ? "en-GB" : "en-US");
 
 				var timePicker = new TimePicker { SelectedTime = new TimeSpan(17, 15, 0) };
 				Assert.AreEqual(expectedClock, timePicker.ClockIdentifier);
 
-				// Lay out synchronously: the layout loop runs outside this test's flow, so it doesn't see the culture set above.
+				// Lay out synchronously so the template sees the opposite CurrentCulture set above.
 				TestServices.WindowHelper.WindowContent = timePicker;
 				timePicker.UpdateLayout();
 
@@ -131,7 +136,12 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 			finally
 			{
+				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
 				CultureInfo.CurrentCulture = originalCulture;
+
+				// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+				CultureInfo.CurrentUICulture = originalUICulture;
+				CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 				TestServices.WindowHelper.WindowContent = null;
 			}
 		}
