@@ -759,6 +759,35 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 
 		[TestMethod]
 		[RunsOnUIThread]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.NativeWasm | RuntimeTestPlatforms.NativeMobile)] // Native renderers load SVG through their own pipeline
+		[DataRow(false)]
+		[DataRow(true)]
+		public async Task When_SVGImageSource_SetSourceAsync_From_Image_ImageOpened(bool collapsed)
+		{
+			// As on WinUI, an image raises ImageOpened once the operation has completed, so a stream set from its handler
+			// doesn't cancel the operation. A brush raises it before (see Given_ImageBrush).
+			var svgImageSource = new SvgImageSource();
+			var image = new Image() { Source = svgImageSource, Width = 100, Height = 100, Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible };
+			var border = new Border() { Width = 100, Height = 100, Background = new SolidColorBrush(Colors.White), Child = image };
+			await UITestHelper.Load(border);
+
+			using var blue = await (await CreateSvgFileAsync("blue")).OpenReadAsync();
+			Task<SvgImageSourceLoadStatus> reload = null;
+			image.ImageOpened += (_, _) => reload ??= svgImageSource.SetSourceAsync(blue).AsTask();
+
+			using (var red = await (await CreateSvgFileAsync("red")).OpenReadAsync())
+			{
+				Assert.AreEqual(SvgImageSourceLoadStatus.Success, await svgImageSource.SetSourceAsync(red));
+			}
+
+			image.Visibility = Visibility.Visible;
+			await WindowHelper.WaitFor(() => reload is not null, message: "Image.ImageOpened was not raised.");
+			Assert.AreEqual(SvgImageSourceLoadStatus.Success, await reload);
+			await AssertCenterColor(border, Colors.Blue);
+		}
+
+		[TestMethod]
+		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Wasm | RuntimeTestPlatforms.NativeMobile)] // No sockets in the browser; native renderers load SVG through their own pipeline
 		public async Task When_SVGImageSource_SetSourceAsync_Replaced_Before_Published()
 		{

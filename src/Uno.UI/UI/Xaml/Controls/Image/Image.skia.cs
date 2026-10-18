@@ -12,7 +12,8 @@ namespace Microsoft.UI.Xaml.Controls
 {
 	partial class Image : FrameworkElement
 	{
-		// What an SvgImageSource needs released: it draws through a child canvas, not through a subscription.
+		// What an SvgImageSource needs released: it draws through a child canvas, and its subscription only tells when to
+		// raise ImageOpened.
 		private readonly SerialDisposable _sourceDisposable = new SerialDisposable();
 		private ImageSource.Subscription _subscription;
 
@@ -28,6 +29,12 @@ namespace Microsoft.UI.Xaml.Controls
 		// The SourceVersion of Source that ImageOpened was raised for: WinUI raises it once per source, so the data
 		// delivered again when the Image re-enters the tree, or decoded again after its release, raises nothing.
 		private int? _imageOpenedVersion;
+
+		// The SVG source ImageOpened was raised for: an SVG source raises it on an image once, however often it loads.
+		private SvgImageSource _svgImageOpenedFor;
+
+		// Whether the SVG source delivered data the image has yet to show, which raises ImageOpened when it is measured.
+		private bool _svgDataPending;
 
 		public Image()
 		{
@@ -46,6 +53,12 @@ namespace Microsoft.UI.Xaml.Controls
 			_currentSurface = null;
 			_pendingImageData = null;
 			_imageOpenedVersion = null;
+			_svgDataPending = false;
+			if (!ReferenceEquals(newValue, _svgImageOpenedFor))
+			{
+				_svgImageOpenedFor = null;
+			}
+
 			_subscription?.Applied(ImageData.Empty);
 			ReleaseSubscription();
 			_lastMeasuredSize = default;
@@ -68,13 +81,21 @@ namespace Microsoft.UI.Xaml.Controls
 			_svgCanvas = source.GetCanvas();
 			AddChild(_svgCanvas);
 			source.SourceLoaded += OnSvgSourceLoaded;
-			source.Opened += OnSvgSourceOpened;
 			source.OpenFailed += OnSvgSourceFailed;
+
+			// Data arrives after the source's Opened and before its SetSourceAsync completes. The subscription, disposed when
+			// the image changes source, gets none for a previous one.
+			var subscription = source.Subscribe(data =>
+			{
+				_svgDataPending = data.HasData;
+				InvalidateMeasure();
+			});
+
 			_sourceDisposable.Disposable = Disposable.Create(() =>
 			{
+				subscription.Dispose();
 				RemoveChild(_svgCanvas);
 				source.SourceLoaded -= OnSvgSourceLoaded;
-				source.Opened -= OnSvgSourceOpened;
 				source.OpenFailed -= OnSvgSourceFailed;
 				_svgCanvas = null;
 			});
@@ -82,9 +103,20 @@ namespace Microsoft.UI.Xaml.Controls
 
 		private void OnSvgSourceLoaded(object sender, EventArgs args) => InvalidateMeasure();
 
-		// Like WinUI, an SVG source raises ImageOpened on the images showing it together with its Opened, so once.
-		private void OnSvgSourceOpened(SvgImageSource sender, SvgImageSourceOpenedEventArgs args)
-			=> ImageOpened?.Invoke(this, new RoutedEventArgs(this));
+		// Like WinUI, an image raises ImageOpened for an SVG source the first time it shows the source's data, once the
+		// SetSourceAsync that loaded it has completed, so a stream set from the handler doesn't cancel it.
+		private void TryRaiseSvgImageOpened()
+		{
+			if (_svgDataPending && Source is SvgImageSource source)
+			{
+				_svgDataPending = false;
+				if (!ReferenceEquals(_svgImageOpenedFor, source))
+				{
+					_svgImageOpenedFor = source;
+					ImageOpened?.Invoke(this, new RoutedEventArgs(this));
+				}
+			}
+		}
 
 		private void OnSvgSourceFailed(SvgImageSource sender, SvgImageSourceFailedEventArgs args)
 		{
@@ -135,6 +167,7 @@ namespace Microsoft.UI.Xaml.Controls
 		protected override Size MeasureOverride(Size availableSize)
 		{
 			TryProcessPendingSource();
+			TryRaiseSvgImageOpened();
 
 			if (IsSourceReady())
 			{
