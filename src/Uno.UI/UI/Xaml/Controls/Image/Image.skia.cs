@@ -15,6 +15,11 @@ namespace Microsoft.UI.Xaml.Controls
 		// What an SvgImageSource needs released: it draws through a child canvas, and its subscription only tells when to
 		// raise ImageOpened.
 		private readonly SerialDisposable _sourceDisposable = new SerialDisposable();
+
+		// An SvgImageSource's events and data, subscribed only while the image is in the tree: a source that outlives the
+		// image (an icon kept in a static field or a resource, say) would otherwise keep it and everything it references
+		// alive, as the source holds the handlers.
+		private readonly SerialDisposable _svgSubscription = new SerialDisposable();
 		private ImageSource.Subscription _subscription;
 
 		// Changes whenever _subscription is set or released, so a Subscribe that the app superseded meanwhile is noticed.
@@ -46,6 +51,7 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 			// We clear the old image first. We do NOT wait for the new image to load
 			// for it to replace the old one. This is what happens on WinUI.
+			_svgSubscription.Disposable = null;
 			_sourceDisposable.Disposable = null;
 
 			// The sprite lets go of the surface before the subscription can release it.
@@ -67,6 +73,11 @@ namespace Microsoft.UI.Xaml.Controls
 			if (newValue is SvgImageSource svgImageSource)
 			{
 				InitializeSvgSource(svgImageSource);
+
+				if (IsLoaded)
+				{
+					SubscribeSvgSource(svgImageSource);
+				}
 			}
 			// Subscribing is what decodes the source, so an unloaded Image (e.g. a recycled container whose binding
 			// updates off-tree) waits for OnLoaded, as WinUI decodes only once the element is in the live tree.
@@ -80,24 +91,33 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 			_svgCanvas = source.GetCanvas();
 			AddChild(_svgCanvas);
+
+			_sourceDisposable.Disposable = Disposable.Create(() =>
+			{
+				RemoveChild(_svgCanvas);
+				_svgCanvas = null;
+			});
+		}
+
+		private void SubscribeSvgSource(SvgImageSource source)
+		{
 			source.SourceLoaded += OnSvgSourceLoaded;
 			source.OpenFailed += OnSvgSourceFailed;
 
 			// Data arrives after the source's Opened and before its SetSourceAsync completes. The subscription, disposed when
-			// the image changes source, gets none for a previous one.
+			// the image changes source or leaves the tree, gets none for a previous one; a source that already has its data
+			// delivers it again on loading, which raises nothing (_svgImageOpenedFor).
 			var subscription = source.Subscribe(data =>
 			{
 				_svgDataPending = data.HasData;
 				InvalidateMeasure();
 			});
 
-			_sourceDisposable.Disposable = Disposable.Create(() =>
+			_svgSubscription.Disposable = Disposable.Create(() =>
 			{
 				subscription.Dispose();
-				RemoveChild(_svgCanvas);
 				source.SourceLoaded -= OnSvgSourceLoaded;
 				source.OpenFailed -= OnSvgSourceFailed;
-				_svgCanvas = null;
 			});
 		}
 
@@ -304,7 +324,14 @@ namespace Microsoft.UI.Xaml.Controls
 
 			// The subscription was released on unload: subscribe again. A source that kept its data (shared through the
 			// cache, or not yet released) delivers it at once; one that released it decodes it again.
-			if (_subscription is null && Source is { } source and not SvgImageSource)
+			if (Source is SvgImageSource svgImageSource)
+			{
+				if (_svgSubscription.Disposable is null)
+				{
+					SubscribeSvgSource(svgImageSource);
+				}
+			}
+			else if (_subscription is null && Source is { } source)
 			{
 				InitializeImageSource(source);
 			}
@@ -318,6 +345,7 @@ namespace Microsoft.UI.Xaml.Controls
 			// its brush: it is not drawn off the tree, and an Image back in time still has them. Data not yet drawn is dropped.
 			_pendingImageData = null;
 			ReleaseSubscription();
+			_svgSubscription.Disposable = null;
 		}
 
 		partial void OnMonochromeColorChanged()

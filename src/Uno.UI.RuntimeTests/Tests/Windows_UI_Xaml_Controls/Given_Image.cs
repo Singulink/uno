@@ -788,6 +788,77 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 
 		[TestMethod]
 		[RunsOnUIThread]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.NativeWasm | RuntimeTestPlatforms.NativeMobile)] // Native renderers load SVG through their own pipeline
+		public async Task When_SVGImageSource_Outlives_Image_Then_Image_Collected()
+		{
+			// A source kept for the app's lifetime (an icon in a static field or a resource) must not keep the images that
+			// showed it, nor what they reference, once they have left the tree.
+			var svgImageSource = new SvgImageSource();
+			using (var red = await (await CreateSvgFileAsync("red")).OpenReadAsync())
+			{
+				Assert.AreEqual(SvgImageSourceLoadStatus.Success, await svgImageSource.SetSourceAsync(red));
+			}
+
+			var imageRef = await LoadAndRemoveImage(svgImageSource);
+
+			for (var i = 0; i < 10 && imageRef.IsAlive; i++)
+			{
+				GC.Collect();
+				GC.WaitForPendingFinalizers();
+				GC.Collect();
+				await WindowHelper.WaitForIdle();
+			}
+
+			Assert.IsFalse(imageRef.IsAlive, "The image that showed the SVG source should have been collected.");
+			GC.KeepAlive(svgImageSource);
+		}
+
+		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+		private static async Task<WeakReference> LoadAndRemoveImage(SvgImageSource svgImageSource)
+		{
+			var image = new Image() { Source = svgImageSource, Width = 100, Height = 100 };
+			await UITestHelper.Load(image);
+			await AssertCenterColor(image, Colors.Red);
+
+			TestServices.WindowHelper.WindowContent = null;
+			await WindowHelper.WaitForIdle();
+
+			return new WeakReference(image);
+		}
+
+		[TestMethod]
+		[RunsOnUIThread]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.NativeWasm | RuntimeTestPlatforms.NativeMobile)] // Native renderers load SVG through their own pipeline
+		public async Task When_SVGImageSource_Image_Reloaded_Then_Shown_And_ImageOpened_Once()
+		{
+			// The image lets go of the source while out of the tree and subscribes again when back: it shows the source
+			// again, and ImageOpened, raised once per source, is not raised again.
+			var svgImageSource = new SvgImageSource();
+			var image = new Image() { Source = svgImageSource, Width = 100, Height = 100 };
+			var border = new Border() { Width = 100, Height = 100, Background = new SolidColorBrush(Colors.White), Child = image };
+			var opened = 0;
+			image.ImageOpened += (_, _) => opened++;
+			await UITestHelper.Load(border);
+
+			using (var red = await (await CreateSvgFileAsync("red")).OpenReadAsync())
+			{
+				Assert.AreEqual(SvgImageSourceLoadStatus.Success, await svgImageSource.SetSourceAsync(red));
+			}
+
+			await AssertCenterColor(border, Colors.Red);
+			await WindowHelper.WaitFor(() => opened == 1, message: "Image.ImageOpened was not raised.");
+
+			TestServices.WindowHelper.WindowContent = null;
+			await WindowHelper.WaitForIdle();
+			await UITestHelper.Load(border);
+
+			await AssertCenterColor(border, Colors.Red);
+			await WindowHelper.WaitForIdle();
+			Assert.AreEqual(1, opened);
+		}
+
+		[TestMethod]
+		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Wasm | RuntimeTestPlatforms.NativeMobile)] // No sockets in the browser; native renderers load SVG through their own pipeline
 		public async Task When_SVGImageSource_SetSourceAsync_Replaced_Before_Published()
 		{
