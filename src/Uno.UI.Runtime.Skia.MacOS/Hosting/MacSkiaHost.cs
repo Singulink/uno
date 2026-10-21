@@ -48,6 +48,7 @@ public class MacSkiaHost : SkiaHost, ISkiaApplicationHost
 		MacOSClipboardExtension.Register();
 		MacOSDragDropExtension.Register();
 		MacOSCoreApplicationExtension.Register();
+		MacOSDeviceClockExtension.Register();
 		MacOSFileOpenPickerExtension.Register();
 		MacOSFileSavePickerExtension.Register();
 		MacOSFolderPickerExtension.Register();

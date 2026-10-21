@@ -6,6 +6,7 @@ using Windows.Globalization;
 using System.Linq;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
+using Uno.UI.RuntimeTests.Helpers;
 
 namespace Uno.UI.RuntimeTests.Tests.Windows_Globalization;
 
@@ -18,6 +19,9 @@ public class Given_DateTimeFormatter
 	[DataRow("en-US", "en-GB", "12HourClock", "1:05 PM")]
 	public void When_Language_Differs_From_CurrentCulture_Then_Time_Follows_Language(string language, string currentCulture, string expectedClock, string expectedTime)
 	{
+		DefaultClockHelper.AssumeStockTimeFormat(language);
+		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
+
 		var culture = CultureInfo.CurrentCulture;
 		var uiCulture = CultureInfo.CurrentUICulture;
 		var threadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
@@ -102,6 +106,9 @@ public class Given_DateTimeFormatter
 	[DataRow("year.abbreviated month day", "en-US", 13, "1/15/24")]
 	public void When_Template_Names_Some_Parts_Then_Format_Has_Only_Those(string template, string language, int hour, string expected)
 	{
+		DefaultClockHelper.AssumeStockTimeFormat(language);
+		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
+
 		var formatter = new DateTimeFormatter(template, new[] { language });
 
 		Assert.AreEqual(expected, NormalizeText(formatter.Format(new DateTimeOffset(new DateTime(2024, 1, 15, hour, 5, 7)))));
@@ -197,6 +204,9 @@ public class Given_DateTimeFormatter
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25572")]
 	public void When_Created_From_Components_Then_Formats_With_Language_Clock()
 	{
+		DefaultClockHelper.AssumeStockTimeFormat("en-US");
+		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
+
 		var date = new DateTimeOffset(new DateTime(2024, 1, 15, 13, 5, 7));
 		var defaultClock = new global::Windows.Globalization.Calendar().GetClock();
 
@@ -486,6 +496,10 @@ public class Given_DateTimeFormatter
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25572")]
 	public void When_Languages_Change_Then_Default_Formatters_Follow()
 	{
+		DefaultClockHelper.AssumeStockTimeFormat("en-US");
+		DefaultClockHelper.AssumeStockTimeFormat("de-DE");
+		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
+
 		var primaryLanguageOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{

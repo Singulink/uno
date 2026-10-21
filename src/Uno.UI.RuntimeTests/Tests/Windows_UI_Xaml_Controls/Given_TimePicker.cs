@@ -181,6 +181,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[DataRow("en-GB", "24HourClock", "17")]
 		public void When_Default_ClockIdentifier_Follows_Language(string cultureName, string expectedClock, string expectedHour)
 		{
+			DefaultClockHelper.AssumeStockTimeFormat(cultureName);
+			using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
+
 			var originalCulture = CultureInfo.CurrentCulture;
 			var originalUICulture = CultureInfo.CurrentUICulture;
 			var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
@@ -214,6 +217,41 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				TestServices.WindowHelper.WindowContent = null;
 			}
 		}
+
+#if HAS_UNO
+		// The 24h rows of the WinUI probe on Windows: the device (regional format) is en-US with a 24-hour time.
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25573")]
+		[DataRow("en-CA", "12HourClock", "1")]
+		[DataRow("en-US", "24HourClock", "13")]
+		[DataRow("de-DE", "24HourClock", "13")]
+		public void When_Device_Uses_24_Hour_Clock_Then_Default_ClockIdentifier_Follows_It_In_Its_Locale_Only(string language, string expectedClock, string expectedHour)
+		{
+			DefaultClockHelper.AssumeStockTimeFormat(language);
+
+			var originalOverride = global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride;
+			try
+			{
+				global::Windows.Globalization.DeviceClock.TestDevice = ("en-US", null, true);
+				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = language;
+
+				var timePicker = new TimePicker { SelectedTime = new TimeSpan(13, 5, 0) };
+				Assert.AreEqual(expectedClock, timePicker.ClockIdentifier);
+
+				TestServices.WindowHelper.WindowContent = timePicker;
+				timePicker.UpdateLayout();
+
+				var hourTextBlock = (TextBlock)VisualTreeUtils.FindVisualChildByName(timePicker, "HourTextBlock");
+				Assert.AreEqual(expectedHour, hourTextBlock.Text);
+			}
+			finally
+			{
+				global::Windows.Globalization.DeviceClock.TestDevice = null;
+				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+				TestServices.WindowHelper.WindowContent = null;
+			}
+		}
+#endif
 
 		[TestMethod]
 		public async Task When_MinuteIncrement_Not_In_Range_Should_Throw_And_Keep_OldValue()
@@ -554,7 +592,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		{
 			TimePicker timePicker = new()
 			{
-				Time = new TimeSpan(12, 30, 0)
+				Time = new TimeSpan(12, 30, 0),
+				// The flyout helper expects a period column, which the default clock may not have.
+				ClockIdentifier = Windows.Globalization.ClockIdentifiers.TwelveHour,
 			};
 #if HAS_UNO
 			timePicker.UseNativeStyle = false;
