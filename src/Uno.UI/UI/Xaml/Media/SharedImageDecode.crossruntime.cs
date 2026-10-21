@@ -99,6 +99,11 @@ internal sealed class SharedImageDecode
 	/// </summary>
 	internal bool IsReleased { get; private set; }
 
+	/// <summary>
+	/// The pixel size of the decode, once its pixels are released.
+	/// </summary>
+	internal global::Windows.Foundation.Size? ReleasedPixelSize { get; private set; }
+
 	// A failed load must not keep failing later requesters: WinUI drops an ImageCache once released, so the next request
 	// downloads again (MUX Reference: ImageProvider::OnImageCacheInvalidated — ImageProvider.cpp).
 	private bool IsFailed => Load.IsCompleted && Load.Result.Share != this;
@@ -274,6 +279,7 @@ internal sealed class SharedImageDecode
 	{
 		_pendingRelease = null;
 		IsReleased = true;
+		ReleasedPixelSize = ImageSource.PixelSizeOf(Load.Result);
 		RemoveFromCache();
 		ReleaseFrames();
 	}

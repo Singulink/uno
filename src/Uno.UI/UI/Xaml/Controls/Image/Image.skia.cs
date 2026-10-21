@@ -189,9 +189,9 @@ namespace Microsoft.UI.Xaml.Controls
 			TryProcessPendingSource();
 			TryRaiseSvgImageOpened();
 
-			if (IsSourceReady())
+			if (GetSourceSize() is { } sourceSize)
 			{
-				_lastMeasuredSize = GetSourceSize();
+				_lastMeasuredSize = sourceSize;
 
 				Size ret;
 
@@ -303,9 +303,10 @@ namespace Microsoft.UI.Xaml.Controls
 				{
 					_imageSprite.Size = roundedSize;
 
-					var transform = Matrix3x2.CreateScale(_imageSprite.Size.X / _currentSurface.Image.Width, _imageSprite.Size.Y / _currentSurface.Image.Height);
-
-					_surfaceBrush.TransformMatrix = transform;
+					if (_currentSurface?.Image is { } image)
+					{
+						_surfaceBrush.TransformMatrix = Matrix3x2.CreateScale(_imageSprite.Size.X / image.Width, _imageSprite.Size.Y / image.Height);
+					}
 
 					// Image has no direct child that needs to be arranged explicitly
 					return containerSize;
@@ -362,30 +363,22 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 		}
 
-		private bool IsSourceReady()
+		private bool IsSourceReady() => GetSourceSize() is not null;
+
+		private Size? GetSourceSize()
 		{
 			if (Source is SvgImageSource svgImageSource)
 			{
-				return svgImageSource.IsParsed;
+				return svgImageSource.IsParsed ? svgImageSource.SourceSize : null;
 			}
-			else if (Source is ImageSource imageSource)
+			else if (Source is ImageSource source)
 			{
-				return _currentSurface?.Image != null;
+				// Pixels the source released because nothing displayed them keep their size until it delivers them again (a
+				// cache-off URI downloads again), so an auto-sized Image doesn't collapse meanwhile.
+				return _currentSurface?.Image is { } image ? new Size(image.Width, image.Height) : source.ReleasedPixelSize;
 			}
 
-			return false;
-		}
-
-		private Size GetSourceSize()
-		{
-			if (Source is SvgImageSource svgImageSource)
-			{
-				return svgImageSource.SourceSize;
-			}
-			else
-			{
-				return new Size(_currentSurface.Image.Width, _currentSurface.Image.Height);
-			}
+			return null;
 		}
 
 		/// <summary>

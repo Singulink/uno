@@ -68,6 +68,19 @@ namespace Microsoft.UI.Xaml.Media
 		// The wait of what this source decoded while nothing subscribes to it.
 		private PendingImageReleases.Entry _pendingRelease;
 
+		private global::Windows.Foundation.Size? _releasedPixelSize;
+
+		/// <summary>
+		/// The pixel size of what this source released because nothing displayed it, until it opens again or changes: an
+		/// Image measures with it meanwhile, so it doesn't collapse while the source decodes or downloads again.
+		/// </summary>
+		internal global::Windows.Foundation.Size? ReleasedPixelSize
+		{
+			// A shared decode released because nothing displayed it stays this source's data until it opens again.
+			get => _releasedPixelSize ?? (_imageData.Share is { IsReleased: true } share ? share.ReleasedPixelSize : null);
+			private set => _releasedPixelSize = value;
+		}
+
 		protected ImageSource()
 		{
 
@@ -342,6 +355,12 @@ namespace Microsoft.UI.Xaml.Media
 			// An open nothing waits for is stopped, which cancels an uncached download; data shared through the cache stays.
 			if (_isOpening || IsReleasable(_imageData))
 			{
+				// A stopped open keeps the size of what was released before it.
+				if (PixelSizeOf(_imageData) is { } size)
+				{
+					ReleasedPixelSize = size;
+				}
+
 				ReleaseImageData();
 			}
 		}
@@ -474,6 +493,16 @@ namespace Microsoft.UI.Xaml.Media
 #endif
 
 		/// <summary>
+		/// The pixel size of decoded data, while it has its pixels.
+		/// </summary>
+		internal static global::Windows.Foundation.Size? PixelSizeOf(ImageData data)
+#if __SKIA__
+			=> data.CompositionSurface?.Image is { } image ? new(image.Width, image.Height) : null;
+#else
+			=> null;
+#endif
+
+		/// <summary>
 		/// Releases the decoded frames of an image surface that nothing will display, unless the data is shared through
 		/// the bitmap cache, in which case it is the cache's to release.
 		/// </summary>
@@ -500,6 +529,7 @@ namespace Microsoft.UI.Xaml.Media
 		private protected void InvalidateSource()
 		{
 			ReleaseImageData();
+			ReleasedPixelSize = null;
 			SourceVersion++;
 
 			if (_subscriptions.Count > 0 || this is SvgImageSource)
@@ -584,6 +614,7 @@ namespace Microsoft.UI.Xaml.Media
 		private void OnOpened(ImageData data)
 		{
 			_imageData = data; // We should also cache the targetWidth and targetHeight
+			ReleasedPixelSize = null;
 			var version = ++_dataVersion;
 
 			if (this.Log().IsEnabled(LogLevel.Debug))
