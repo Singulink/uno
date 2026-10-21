@@ -120,8 +120,7 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 			else if (newValue is WriteableBitmap wb)
 			{
-				wb.Invalidated += OnInvalidated;
-				_sourceDisposable.Disposable = Disposable.Create(() => wb.Invalidated -= OnInvalidated);
+				_sourceDisposable.Disposable = wb.RegisterInvalidated(OnInvalidated);
 
 				void OnInvalidated()
 				{

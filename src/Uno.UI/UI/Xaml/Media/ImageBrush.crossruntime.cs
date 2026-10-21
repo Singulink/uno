@@ -26,7 +26,7 @@ namespace Microsoft.UI.Xaml.Media
 #endif
 
 			var version = ++_subscriptionVersion;
-			var subscription = newValue?.Subscribe(OnSourceOpened);
+			var subscription = newValue?.SubscribeWeakly(OnSourceOpened);
 
 			// Subscribing ran app code (an ImageOpened handler) that may have set another ImageSource, subscribed to by now.
 			if (version == _subscriptionVersion)
