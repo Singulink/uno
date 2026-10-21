@@ -124,8 +124,9 @@ namespace Windows.Globalization
 
 			if (optionalCalendar is null)
 			{
-				// No culture formats with this calendar (Julian, lunisolar): use the language's Gregorian names,
-				// as WinRT does for Julian, rather than its default calendar, which may not cover the date.
+				// Calendars on the Gregorian months (Julian, Thai, Korean, Taiwan) and those no culture formats with
+				// (lunisolar) use the language's Gregorian names, as WinRT does ("January 2567" for en-US), rather
+				// than its default calendar, which may not cover the date.
 				culture = languageCulture;
 				optionalCalendar = languageCulture.Calendar is global::System.Globalization.GregorianCalendar
 					? null
@@ -161,10 +162,7 @@ namespace Windows.Globalization
 				global::System.Globalization.HebrewCalendar => "he-IL",
 				global::System.Globalization.JapaneseCalendar => "ja-JP",
 				global::System.Globalization.UmAlQuraCalendar or global::System.Globalization.HijriCalendar => "ar-SA",
-				global::System.Globalization.ThaiBuddhistCalendar => "th-TH",
 				global::System.Globalization.PersianCalendar => "fa-IR",
-				global::System.Globalization.TaiwanCalendar => "zh-TW",
-				global::System.Globalization.KoreanCalendar => "ko-KR",
 				_ => null,
 			};
 
@@ -570,7 +568,8 @@ namespace Windows.Globalization
 
 		public string YearAsTruncatedString(int remainingDigits)
 		{
-			// The last digits, zero-padded: 2567 gives "67", year 6 gives "06".
+			// The last digits, zero-padded to the length as WinRT does: 2567 gives "67" and year 6 "06" for 2,
+			// 2024 gives "002024" for 6.
 			var year = Year.ToString(new string('0', remainingDigits), _formatCulture);
 			return year.Length > remainingDigits ? year.Substring(year.Length - remainingDigits) : year;
 		}
