@@ -500,6 +500,8 @@ public class Given_DateTimeFormatter
 		DefaultClockHelper.AssumeStockTimeFormat("de-DE");
 		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
 
+		var uiCulture = CultureInfo.CurrentUICulture;
+		var threadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var primaryLanguageOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -522,6 +524,10 @@ public class Given_DateTimeFormatter
 		finally
 		{
 			ApplicationLanguages.PrimaryLanguageOverride = primaryLanguageOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = uiCulture;
+			CultureInfo.DefaultThreadCurrentUICulture = threadUICulture;
 		}
 	}
 

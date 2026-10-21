@@ -112,6 +112,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[DataRow(0, "12:05 AM")]
 		public async Task When_Time_Selected_Then_Automation_Name_Has_Only_The_Time(int hour, string expectedTime)
 		{
+			var originalUICulture = CultureInfo.CurrentUICulture;
+			var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 			var originalOverride = global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride;
 			try
 			{
@@ -133,6 +135,10 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			finally
 			{
 				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+				// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+				CultureInfo.CurrentUICulture = originalUICulture;
+				CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 				TestServices.WindowHelper.WindowContent = null;
 			}
 		}
@@ -148,6 +154,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		[DataRow("ja-JP", "12HourClock", "1", "SecondPickerHost", "ThirdPickerHost", "FirstPickerHost")]
 		public async Task When_Clock_Is_Set_Then_Columns_Follow_Its_Pattern(string language, string clock, string expectedHour, string expectedHourHost, string expectedMinuteHost, string expectedPeriodHost)
 		{
+			var originalUICulture = CultureInfo.CurrentUICulture;
+			var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 			var originalOverride = global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride;
 			try
 			{
@@ -170,6 +178,10 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			finally
 			{
 				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+				// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+				CultureInfo.CurrentUICulture = originalUICulture;
+				CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 				TestServices.WindowHelper.WindowContent = null;
 			}
 		}
@@ -229,6 +241,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		{
 			DefaultClockHelper.AssumeStockTimeFormat(language);
 
+			var originalUICulture = CultureInfo.CurrentUICulture;
+			var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 			var originalOverride = global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride;
 			try
 			{
@@ -248,6 +262,10 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			{
 				global::Windows.Globalization.DeviceClock.TestDevice = null;
 				global::Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+				// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+				CultureInfo.CurrentUICulture = originalUICulture;
+				CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 				TestServices.WindowHelper.WindowContent = null;
 			}
 		}

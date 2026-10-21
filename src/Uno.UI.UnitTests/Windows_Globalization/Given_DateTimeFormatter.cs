@@ -103,6 +103,8 @@ public class Given_DateTimeFormatter
 		DefaultClockHelper.AssumeStockTimeFormat(language);
 		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
 
+		var originalUICulture = CultureInfo.CurrentUICulture;
+		var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var originalOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -125,6 +127,10 @@ public class Given_DateTimeFormatter
 		finally
 		{
 			ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = originalUICulture;
+			CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 		}
 	}
 
@@ -199,6 +205,8 @@ public class Given_DateTimeFormatter
 		DefaultClockHelper.AssumeStockTimeFormat("de-DE");
 		using var device = DefaultClockHelper.UseDeviceWithoutClockSetting();
 
+		var originalUICulture = CultureInfo.CurrentUICulture;
+		var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var originalOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -214,6 +222,10 @@ public class Given_DateTimeFormatter
 		finally
 		{
 			ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = originalUICulture;
+			CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 		}
 	}
 

@@ -105,6 +105,8 @@ public class Given_Calendar
 	{
 		DefaultClockHelper.AssumeStockTimeFormat(language);
 
+		var originalUICulture = CultureInfo.CurrentUICulture;
+		var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var originalOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -122,6 +124,10 @@ public class Given_Calendar
 		{
 			DeviceClock.TestDevice = null;
 			ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = originalUICulture;
+			CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 		}
 	}
 
@@ -157,6 +163,8 @@ public class Given_Calendar
 	{
 		DefaultClockHelper.AssumeStockTimeFormat("en-US");
 
+		var originalUICulture = CultureInfo.CurrentUICulture;
+		var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var originalOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -178,6 +186,10 @@ public class Given_Calendar
 		{
 			DeviceClock.TestDevice = null;
 			ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = originalUICulture;
+			CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 		}
 	}
 
@@ -209,6 +221,8 @@ public class Given_Calendar
 	{
 		DefaultClockHelper.AssumeStockTimeFormat(language);
 
+		var originalUICulture = CultureInfo.CurrentUICulture;
+		var originalThreadUICulture = CultureInfo.DefaultThreadCurrentUICulture;
 		var originalOverride = ApplicationLanguages.PrimaryLanguageOverride;
 		try
 		{
@@ -223,6 +237,10 @@ public class Given_Calendar
 		{
 			DeviceClock.TestDevice = null;
 			ApplicationLanguages.PrimaryLanguageOverride = originalOverride;
+
+			// On 6.x the legacy PrimaryLanguageOverride setter also swaps the UI cultures.
+			CultureInfo.CurrentUICulture = originalUICulture;
+			CultureInfo.DefaultThreadCurrentUICulture = originalThreadUICulture;
 		}
 	}
 
