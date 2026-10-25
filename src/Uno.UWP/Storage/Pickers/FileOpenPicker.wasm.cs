@@ -34,6 +34,18 @@ namespace Windows.Storage.Pickers
 			return _fileSystemAccessApiSupported.Value;
 		}
 
+		/// <summary>
+		/// Gets whether <see cref="PickSingleFileAsync"/> and <see cref="PickMultipleFilesAsync"/> have an implementation they can use under the current
+		/// <see cref="WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration"/>, the same way <see cref="PickFilesAsync"/> chooses one.
+		/// </summary>
+		internal static bool IsSupported()
+		{
+			var configuration = WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration;
+
+			return (configuration.HasFlag(WasmPickerConfiguration.FileSystemAccessApi) && IsNativePickerSupported())
+				|| configuration.HasFlag(WasmPickerConfiguration.DownloadUpload);
+		}
+
 		private async Task<StorageFile?> PickSingleFileTaskAsync(CancellationToken token)
 		{
 			var files = await PickFilesAsync(false, token);

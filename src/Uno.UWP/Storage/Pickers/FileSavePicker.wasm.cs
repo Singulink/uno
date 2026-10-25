@@ -31,6 +31,18 @@ namespace Windows.Storage.Pickers
 			return _fileSystemAccessApiSupported.Value;
 		}
 
+		/// <summary>
+		/// Gets whether <see cref="PickSaveFileAsync"/> has an implementation it can use under the current
+		/// <see cref="WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration"/>, the same way <see cref="PickSaveFileTaskAsync"/> chooses one.
+		/// </summary>
+		internal static bool IsSupported()
+		{
+			var configuration = WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration;
+
+			return (configuration.HasFlag(WasmPickerConfiguration.FileSystemAccessApi) && IsNativePickerSupported())
+				|| configuration.HasFlag(WasmPickerConfiguration.DownloadUpload);
+		}
+
 		private async Task<StorageFile?> PickSaveFileTaskAsync(CancellationToken token)
 		{
 			var fileSystemAccessApiEnabled = WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration
