@@ -236,6 +236,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 		[RequiresFullWindow]
 		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Native)]
 		[DataRow(0, DisplayName = "Run")]
+		[DataRow(1, DisplayName = "Run in a Span")]
+		[DataRow(2, DisplayName = "Run in nested Spans")]
 		public async Task When_Run_Foreground_ThemeResource_And_Application_Theme_Toggled(int spanDepth)
 		{
 			var lightColor = Color.FromArgb(0xFF, 0x00, 0x80, 0x00);

@@ -743,12 +743,15 @@ public partial class DependencyObjectStore
 	}
 
 	/// <summary>
-	/// Propagates a resource update to a child that is not stored as a property value (e.g. TextBlock inlines).
+	/// Propagates a resource update to a child that is not stored as a property value (e.g. TextBlock inlines),
+	/// and to the inlines nested in it when it is a <see cref="Documents.Span"/>.
 	/// </summary>
 	/// <remarks>
 	/// During a theme walk the child joins the walk, as WinUI's property walk notifies it (Theming.cpp:218-221).
 	/// Resolving it against <paramref name="resourceContextProvider"/> instead would use that element's
 	/// per-object theme, which is only persisted once its walk completes.
+	/// The inlines of a Span are not stored as a property value either, while WinUI's property walk reaches
+	/// them through Span_Inlines, so they follow their Span.
 	/// </remarks>
 	internal void UpdateChildThemeBindings(DependencyObject child, ResourceUpdateReason updateReason, FrameworkElement resourceContextProvider)
 	{
@@ -758,11 +761,22 @@ public partial class DependencyObjectStore
 		if (IsProcessingThemeWalk)
 		{
 			childStore.NotifyThemeChanged(_walkTheme, _walkForceRefresh);
-			return;
 		}
+		else
+		{
+			childStore.UpdateResourceBindings(updateReason, resourceContextProvider);
+		}
+#else
+		childStore.UpdateResourceBindings(updateReason, resourceContextProvider);
 #endif
 
-		childStore.UpdateResourceBindings(updateReason, resourceContextProvider);
+		if (child is Documents.Span span)
+		{
+			foreach (var inline in span.Inlines)
+			{
+				UpdateChildThemeBindings(inline, updateReason, resourceContextProvider);
+			}
+		}
 	}
 
 	#endregion
