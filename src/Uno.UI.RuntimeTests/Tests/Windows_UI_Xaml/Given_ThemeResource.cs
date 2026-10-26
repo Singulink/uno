@@ -231,6 +231,64 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 				Assert.AreEqual(Colors.MediumPurple, ((SolidColorBrush)border.BorderBrush).Color);
 			}
 		}
+
+		[TestMethod]
+		[RequiresFullWindow]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Native)]
+		[DataRow(0, DisplayName = "Run")]
+		public async Task When_Run_Foreground_ThemeResource_And_Application_Theme_Toggled(int spanDepth)
+		{
+			var lightColor = Color.FromArgb(0xFF, 0x00, 0x80, 0x00);
+			var darkColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0x00);
+
+			var appResources = new ResourceDictionary();
+			appResources.ThemeDictionaries["Light"] = new ResourceDictionary { ["RunThemeTestBrush"] = new SolidColorBrush(lightColor) };
+			appResources.ThemeDictionaries["Dark"] = new ResourceDictionary { ["RunThemeTestBrush"] = new SolidColorBrush(darkColor) };
+			Application.Current.Resources.MergedDictionaries.Add(appResources);
+
+			try
+			{
+				using var lightApp = ThemeHelper.UseApplicationLightTheme();
+
+				var themedInline = """<Run Text="themed" Foreground="{ThemeResource RunThemeTestBrush}" />""";
+				for (var i = 0; i < spanDepth; i++)
+				{
+					themedInline = $"<Span>{themedInline}</Span>";
+				}
+
+				var textBlock = (TextBlock)XamlReader.Load(
+					$"""<TextBlock xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Run Text="Plain " />{themedInline}</TextBlock>""");
+
+				var inline = textBlock.Inlines[1];
+				while (inline is Span span)
+				{
+					inline = span.Inlines[0];
+				}
+
+				var run = (Run)inline;
+
+				WindowHelper.WindowContent = textBlock;
+				await WindowHelper.WaitForLoaded(textBlock);
+				Assert.AreEqual(lightColor, ((SolidColorBrush)run.Foreground).Color, "initial Light");
+
+				// Each switch must apply the new theme's brush, not the one of the theme that is being left.
+				for (var i = 1; i <= 2; i++)
+				{
+					using (ThemeHelper.UseApplicationDarkTheme())
+					{
+						await WindowHelper.WaitForIdle();
+						Assert.AreEqual(darkColor, ((SolidColorBrush)run.Foreground).Color, $"Dark ({i})");
+					}
+
+					await WindowHelper.WaitForIdle();
+					Assert.AreEqual(lightColor, ((SolidColorBrush)run.Foreground).Color, $"back to Light ({i})");
+				}
+			}
+			finally
+			{
+				Application.Current.Resources.MergedDictionaries.Remove(appResources);
+			}
+		}
 #endif
 
 		private async Task When_DefaultForeground(Color lightThemeColor, Color darkThemeColor)

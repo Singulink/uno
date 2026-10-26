@@ -742,6 +742,29 @@ public partial class DependencyObjectStore
 		}
 	}
 
+	/// <summary>
+	/// Propagates a resource update to a child that is not stored as a property value (e.g. TextBlock inlines).
+	/// </summary>
+	/// <remarks>
+	/// During a theme walk the child joins the walk, as WinUI's property walk notifies it (Theming.cpp:218-221).
+	/// Resolving it against <paramref name="resourceContextProvider"/> instead would use that element's
+	/// per-object theme, which is only persisted once its walk completes.
+	/// </remarks>
+	internal void UpdateChildThemeBindings(DependencyObject child, ResourceUpdateReason updateReason, FrameworkElement resourceContextProvider)
+	{
+		var childStore = ((IDependencyObjectStoreProvider)child).Store;
+
+#if UNO_HAS_ENHANCED_LIFECYCLE
+		if (IsProcessingThemeWalk)
+		{
+			childStore.NotifyThemeChanged(_walkTheme, _walkForceRefresh);
+			return;
+		}
+#endif
+
+		childStore.UpdateResourceBindings(updateReason, resourceContextProvider);
+	}
+
 	#endregion
 
 	#region Resource binding orchestration — WinUI: NotifyThemeChangedCoreImpl + FxCallbacks (Theming.cpp lines 166-255)

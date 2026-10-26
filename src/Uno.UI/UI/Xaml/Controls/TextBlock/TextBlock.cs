@@ -1426,9 +1426,10 @@ namespace Microsoft.UI.Xaml.Controls
 
 			if (_inlines is not null)
 			{
+				var store = ((IDependencyObjectStoreProvider)this).Store;
 				foreach (var inline in _inlines)
 				{
-					((IDependencyObjectStoreProvider)inline).Store.UpdateResourceBindings(updateReason, resourceContextProvider: this);
+					store.UpdateChildThemeBindings(inline, updateReason, this);
 				}
 			}
 		}
