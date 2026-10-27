@@ -216,6 +216,9 @@ public partial class CoreWebView2
 		}
 
 		DetachWebResourceRequestedSupport();
+
+		// The new template gets its own native WebView, so release the one it replaces.
+		(_nativeWebView as ISupportsClose)?.Close();
 		_nativeWebView = GetNativeWebViewFromTemplate();
 		AttachWebResourceRequestedSupport();
 

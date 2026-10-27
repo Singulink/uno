@@ -7,6 +7,7 @@ using System.Linq;
 using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Uno.UI.NativeElementHosting;
 using Uno.UI.RuntimeTests.Helpers;
@@ -228,6 +229,54 @@ public class Given_WebView2
 
 			var root = VisualTreeHelper.GetChild(webView, 0) as ContentPresenter;
 			Assert.IsNull(root?.Content, "A closed WebView2 should not present an iframe.");
+		}
+		finally
+		{
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
+	public async Task When_Retemplated_Then_Closed_Then_Replaced_Iframe_Is_Removed()
+	{
+		var webView = new WebView2 { Width = 200, Height = 200 };
+
+		try
+		{
+			await UITestHelper.Load(webView);
+			await NavigateToMarker(webView, "replaced");
+			var replacedElementId = GetIframeElementId(webView);
+
+			webView.Template = (ControlTemplate)XamlReader.Load(
+				"""
+				<ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+					<ContentPresenter x:Name="WebViewTemplateRoot" />
+				</ControlTemplate>
+				""");
+			await TestServices.WindowHelper.WaitForIdle();
+
+			var elementId = GetIframeElementId(webView);
+			Assert.AreNotEqual(replacedElementId, elementId, "The new template should present a new iframe.");
+
+			webView.Close();
+			Assert.IsFalse(IsInDom(elementId), "Close should remove the presented iframe.");
+
+			TestServices.WindowHelper.WindowContent = null;
+			await TestServices.WindowHelper.WaitForIdle();
+
+			for (var i = 0; i < 3; i++)
+			{
+				GC.Collect(2);
+				GC.WaitForPendingFinalizers();
+				await TestServices.WindowHelper.WaitForIdle();
+			}
+
+			await TestServices.WindowHelper.WaitFor(
+				() => !IsInDom(replacedElementId),
+				timeoutMS: 5000,
+				message: "The iframe of the replaced template should not outlive the closed WebView2.");
 		}
 		finally
 		{
