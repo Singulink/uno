@@ -120,6 +120,111 @@ namespace Uno.UI.Tests.Windows_UI_Input
 		}
 
 		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void Tapped_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var taps = new List<TappedEventArgs>();
+			sut.Tapped += (snd, e) => taps.Add(e);
+
+			sut.ProcessDownEvent(25, 25);
+			sut.ProcessUpEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25));
+
+			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+		}
+
+		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void Tapped_Element_Moved_Under_Pointer(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var taps = new List<TappedEventArgs>();
+			sut.Tapped += (snd, e) => taps.Add(e);
+
+			sut.ProcessDownEvent(25, 25);
+			sut.ProcessUpEvent(GetPoint(25, 25).At(rawPosition: new Point(25, 25), position: new Point(25 + GestureRecognizer.TapMaxXDelta + 1, 25)));
+
+			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 1 : 0);
+		}
+
+		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void Tapped_Delta_Raw_Back_Over(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var taps = new List<TappedEventArgs>();
+			sut.Tapped += (snd, e) => taps.Add(e);
+
+			sut.ProcessDownEvent(25, 25);
+			sut.ProcessMoveEvent(GetPointMovedWithElement(25, 25 + GestureRecognizer.TapMaxYDelta + 1));
+			sut.ProcessUpEvent(25, 25); // Release over
+
+			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+		}
+
+		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void DoubleTapped_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer
+			{
+				GestureSettings = GestureSettings.Tap | GestureSettings.DoubleTap,
+				MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition
+			};
+			var taps = new List<TappedEventArgs>();
+			sut.Tapped += (snd, e) => taps.Add(e);
+
+			sut.ProcessDownEvent(25, 25);
+			sut.ProcessUpEvent(25, 25);
+			sut.ProcessDownEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25)); // Second tap too far
+
+			taps.Count(tap => tap.TapCount == 2).Should().Be(measuresTapRangeOnRawPosition ? 0 : 1);
+		}
+
+		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void Holding_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Hold, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var holds = new List<HoldingEventArgs>();
+			sut.Holding += (snd, e) => holds.Add(e);
+
+			using var _ = Touch();
+
+			sut.ProcessDownEvent(25, 25, ts: 0);
+			sut.ProcessMoveEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25, ts: 1));
+			sut.ProcessMoveEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25, ts: GestureRecognizer.HoldMinDelayMicroseconds + 1));
+
+			holds.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+		}
+
+		[TestMethod]
+		[DataRow(false)]
+		[DataRow(true)]
+		public void Drag_Started_Mouse_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Drag, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var drags = new List<DraggingEventArgs>();
+			sut.Dragging += (snd, e) => drags.Add(e);
+
+			using var _ = Mouse();
+
+			sut.ProcessDownEvent(25, 25, ts: 0);
+			sut.ProcessMoveEvent(GetPointMovedWithElement(50, 50, ts: 1));
+
+			drags.Should().HaveCount(measuresTapRangeOnRawPosition ? 1 : 0);
+		}
+
+		// The point of a pointer which moved to the given raw position, with an element that moved along with it.
+		private static PointerPoint GetPointMovedWithElement(double rawX, double rawY, ulong? ts = null)
+			=> GetPoint(25, 25, ts: ts).At(rawPosition: new Point(rawX, rawY), position: new Point(25, 25));
+
+		[TestMethod]
 #if RUNTIME_NATIVE_AOT
 		[Ignore(".BeEquivalentTo() unsupported under NativeAOT; see: https://github.com/AwesomeAssertions/AwesomeAssertions/issues/290")]
 #endif  // RUNTIME_NATIVE_AOT

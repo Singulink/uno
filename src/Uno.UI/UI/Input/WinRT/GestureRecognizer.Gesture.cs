@@ -84,7 +84,7 @@ namespace Windows.UI.Input
 				}
 
 				// Update internal state
-				HasMovedOutOfTapRange |= IsOutOfTapRange(Down.Position, point.Position);
+				HasMovedOutOfTapRange |= IsOutOfTapRange(_recognizer.GetTapRangePosition(Down), _recognizer.GetTapRangePosition(point));
 				HasChangedPointerIdentifier |= PointerIdentifier != GetPointerIdentifier(point);
 				HasExceedMinHoldPressure |= point.Properties.Pressure >= HoldMinPressure;
 
@@ -154,7 +154,7 @@ namespace Windows.UI.Input
 				if (isTapGesture)
 				{
 					// Note: Up cannot be 'null' here!
-					_recognizer._lastSingleTap = (PointerIdentifier, Up!.Timestamp, Up.Position);
+					_recognizer._lastSingleTap = (PointerIdentifier, Up!.Timestamp, _recognizer.GetTapRangePosition(Up));
 
 					if (Settings.HasFlag(GestureSettings.Tap))
 					{
@@ -168,7 +168,7 @@ namespace Windows.UI.Input
 
 			private bool TryRecognizeMultiTap()
 			{
-				if (Settings.HasFlag(GestureSettings.DoubleTap) && IsMultiTapGesture(_recognizer._lastSingleTap, Down))
+				if (Settings.HasFlag(GestureSettings.DoubleTap) && IsMultiTapGesture(_recognizer, Down))
 				{
 					_recognizer._lastSingleTap = default; // The Recognizer supports only double tap, even on UWP
 					_recognizer.Tapped?.Invoke(_recognizer, new TappedEventArgs(Down.PointerId, PointerType, Down.Position, tapCount: 2));
@@ -301,7 +301,7 @@ namespace Windows.UI.Input
 				}
 
 				// For the pointer up, we check only the distance, as it's expected that the pressed button changed!
-				if (IsOutOfTapRange(points.Down.Position, points.Up.Position))
+				if (IsOutOfTapRange(points._recognizer.GetTapRangePosition(points.Down), points._recognizer.GetTapRangePosition(points.Up)))
 				{
 					return false;
 				}
@@ -309,8 +309,9 @@ namespace Windows.UI.Input
 				return true;
 			}
 
-			public static bool IsMultiTapGesture((ulong id, ulong ts, Point position) previousTap, PointerPoint down)
+			public static bool IsMultiTapGesture(GestureRecognizer recognizer, PointerPoint down)
 			{
+				var previousTap = recognizer._lastSingleTap;
 				if (previousTap.ts == 0) // i.s. no previous tap to compare with
 				{
 					return false;
@@ -318,7 +319,7 @@ namespace Windows.UI.Input
 
 				var currentId = GetPointerIdentifier(down);
 				var currentTs = down.Timestamp;
-				var currentPosition = down.Position;
+				var currentPosition = recognizer.GetTapRangePosition(down);
 
 				return previousTap.id == currentId
 					&& currentTs - previousTap.ts <= MultiTapMaxDelayMicroseconds

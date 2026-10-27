@@ -71,6 +71,20 @@ namespace Windows.UI.Input
 		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		public GestureRecognizerSuspiciousCases PatchCases { get; set; } = WinRTFeatureConfiguration.GestureRecognizer._defaultPatchSuspiciousCases;
 
+		/// <summary>
+		/// Measures the tap range (of the tap, double-tap, hold and drag) on the <see cref="PointerPoint.RawPosition"/>
+		/// instead of the <see cref="PointerPoint.Position"/>.
+		/// </summary>
+		/// <remarks>
+		/// Set for UIElement recognizers: they get positions relative to the element, which can move along with the pointer
+		/// (e.g. content scrolled through manipulation events), while the raw position is relative to the window.
+		/// On WinUI, the recognizer of an element gets positions relative to the root.
+		/// </remarks>
+		internal bool MeasuresTapRangeOnRawPosition { get; init; }
+
+		private Point GetTapRangePosition(PointerPoint point)
+			=> MeasuresTapRangeOnRawPosition ? point.RawPosition : point.Position;
+
 		internal bool IsDragging => _manipulation?.IsDragManipulation ?? false;
 
 		/// <summary>
@@ -251,7 +265,7 @@ namespace Windows.UI.Input
 		public event TypedEventHandler<GestureRecognizer, HoldingEventArgs> Holding;
 
 		public bool CanBeDoubleTap(PointerPoint value)
-			=> _gestureSettings.HasFlag(GestureSettings.DoubleTap) && Gesture.IsMultiTapGesture(_lastSingleTap, value);
+			=> _gestureSettings.HasFlag(GestureSettings.DoubleTap) && Gesture.IsMultiTapGesture(this, value);
 		#endregion
 
 		#region Dragging

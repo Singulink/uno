@@ -1770,6 +1770,67 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 		}
 #endif
 
+		[TestMethod]
+		[RunsOnUIThread]
+#if !HAS_INPUT_INJECTOR
+		[Ignore("InputInjector is not supported on this platform.")]
+#endif
+		[DataRow(false)]
+		[DataRow(true)]
+		public async Task When_Touch_Swipe_Then_Not_Tapped(bool elementFollowsFinger)
+		{
+			var transform = new TranslateTransform();
+			var inner = new Border
+			{
+				Width = 300,
+				Height = 100,
+				HorizontalAlignment = HorizontalAlignment.Left,
+				Background = new SolidColorBrush(Microsoft.UI.Colors.Red),
+				RenderTransform = transform
+			};
+			var outer = new Border
+			{
+				Width = 400,
+				Height = 100,
+				Background = new SolidColorBrush(Microsoft.UI.Colors.Green),
+				ManipulationMode = ManipulationModes.TranslateX,
+				Child = inner
+			};
+
+			var tappedCount = 0;
+			inner.Tapped += (_, _) => tappedCount++;
+			outer.ManipulationDelta += (_, e) =>
+			{
+				// Like a list that scrolls its rows by handling the manipulation events instead of using a ScrollViewer.
+				if (elementFollowsFinger)
+				{
+					transform.X = e.Cumulative.Translation.X;
+				}
+			};
+
+			await UITestHelper.Load(outer);
+
+			var injector = InputInjector.TryCreate() ?? throw new InvalidOperationException("Failed to init the InputInjector");
+			using var finger = injector.GetFinger();
+
+			// The finger stays over the element, whether the element moves or not.
+			var bounds = inner.GetAbsoluteBounds();
+			var start = new Windows.Foundation.Point(bounds.X + 50, bounds.Y + bounds.Height / 2);
+
+			// The parent's manipulation mode doesn't prevent a plain tap.
+			finger.Tap(start);
+			await TestServices.WindowHelper.WaitForIdle();
+
+			Assert.AreEqual(1, tappedCount);
+
+			finger.Drag(start, new Windows.Foundation.Point(start.X + 200, start.Y));
+			await TestServices.WindowHelper.WaitForIdle();
+
+			// The finger travelled 200 px on screen: even when the element moved with it, that is not a tap.
+			Assert.AreEqual(elementFollowsFinger ? 200 : 0, transform.X, 1);
+			Assert.AreEqual(1, tappedCount);
+		}
+
 #if HAS_UNO
 		[TestMethod]
 		[RunsOnUIThread]

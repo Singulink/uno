@@ -689,7 +689,7 @@ namespace Windows.UI.Input
 				//		 those thresholds are lower than a Tap (and actually only 1px), which does not math the UWP behavior.
 				var down = _origins.Pointer1;
 				var current = _currents.Pointer1;
-				var isOutOfRange = IsOutOfTapRange(down.Position, current.Position);
+				var isOutOfRange = IsOutOfTapRange(_recognizer.GetTapRangePosition(down), _recognizer.GetTapRangePosition(current));
 
 				switch (_deviceType)
 				{
