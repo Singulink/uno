@@ -735,7 +735,8 @@
 			input.focus(BrowserInvisibleTextBoxViewExtension.focusOptions);
 
 			// An input that keeps focus raises no focusin to arm the trailing-click guard with (see
-			// installTrailingClickGuard), and unarmed the mousedown that trails the tap would blur it.
+			// installTrailingClickGuard), so it is armed here, as it is for the tap that focuses the input.
+			// As there, a focus from code after a touch arms it too; the next pointerdown disarms it.
 			if (BrowserInvisibleTextBoxViewExtension.lastPointerType === "touch" || BrowserInvisibleTextBoxViewExtension.lastPointerType === "pen") {
 				BrowserInvisibleTextBoxViewExtension.swallowNextCanvasClick = true;
 			}
