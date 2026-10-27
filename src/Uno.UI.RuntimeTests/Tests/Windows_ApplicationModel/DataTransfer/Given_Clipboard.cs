@@ -913,15 +913,18 @@ partial class Given_Clipboard
 			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
 			return 'ok';
 			""");
+		StartConsoleCapture("The clipboard is unreadable.");
 		try
 		{
-			// A read failing for a reason other than permission is not reported as a denial.
+			// A read failing for a reason other than permission is not reported as a denial, and is logged as an error.
 			var view = Clipboard.GetContent();
 			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetTextAsync());
 			Assert.IsNotInstanceOfType<UnauthorizedAccessException>(exception.InnerException);
+			Assert.AreEqual("error", GetCapturedConsoleLevels());
 		}
 		finally
 		{
+			StopConsoleCapture();
 			InvokeJs("delete navigator.clipboard.read; return 'ok';");
 		}
 #else
@@ -944,6 +947,7 @@ partial class Given_Clipboard
 			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
 			return 'ok';
 			""");
+		StartConsoleCapture("Read permission denied.");
 		try
 		{
 			// The formats are advertised, and a denied read is told apart from empty content
@@ -953,9 +957,13 @@ partial class Given_Clipboard
 
 			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetTextAsync());
 			Assert.IsInstanceOfType<UnauthorizedAccessException>(exception.InnerException);
+
+			// A denial is an expected outcome, not logged as an error.
+			Assert.AreEqual("debug", GetCapturedConsoleLevels());
 		}
 		finally
 		{
+			StopConsoleCapture();
 			InvokeJs("delete navigator.clipboard.read; delete navigator.clipboard.readText; return 'ok';");
 		}
 #else
@@ -1206,6 +1214,40 @@ partial class Given_Clipboard
 
 	private static string InvokeJs(string body)
 		=> Windows_UI_Xaml_Automation.WasmSemanticDomHelper.InvokeBrowserJs($"(function() {{ {body} }})()");
+
+	// Records the console level of every message containing marker, until StopConsoleCapture.
+	private static void StartConsoleCapture(string marker)
+		=> InvokeJs(
+			$$"""
+			const state = window.__unoConsoleCapture = { levels: [], console: {} };
+			for (const level of ['error', 'warn', 'info', 'log', 'debug']) {
+				const original = state.console[level] = console[level];
+				console[level] = function (...args) {
+					if (args.some(a => String(a).includes('{{marker}}'))) {
+						state.levels.push(level);
+					}
+					return original.apply(console, args);
+				};
+			}
+			return 'ok';
+			""");
+
+	// The levels recorded since StartConsoleCapture, comma-separated.
+	private static string GetCapturedConsoleLevels()
+		=> InvokeJs("return window.__unoConsoleCapture.levels.join(',');");
+
+	private static void StopConsoleCapture()
+		=> InvokeJs(
+			"""
+			const state = window.__unoConsoleCapture;
+			if (state) {
+				for (const level in state.console) {
+					console[level] = state.console[level];
+				}
+				delete window.__unoConsoleCapture;
+			}
+			return 'ok';
+			""");
 #endif
 
 #if HAS_UNO
