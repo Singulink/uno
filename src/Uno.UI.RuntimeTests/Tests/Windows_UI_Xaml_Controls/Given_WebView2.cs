@@ -82,6 +82,7 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
 	public async Task When_Closed_Then_Native_Iframe_Is_Removed()
 	{
 		var webView = new WebView2 { Width = 200, Height = 200 };
@@ -127,6 +128,7 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
 	public async Task When_Closed_Then_Collectable()
 	{
 		var (webViewReference, elementId) = await LoadNavigateAndUnloadWebView2(close: true);
