@@ -52,7 +52,7 @@ namespace Microsoft.UI.Xaml.Controls {
         static navigate(htmlId: string, url: string) {
             const iframe = document.getElementById(htmlId) as HTMLIFrameElement;
             if (iframe) {
-                WebView.lastKnownUrls.set(iframe, url);
+                WebView.lastKnownUrls.set(iframe, WebView.toAbsoluteUrl(url));
                 try {
                     if (iframe.contentWindow) {
                         iframe.contentWindow.location.href = url;
@@ -61,6 +61,16 @@ namespace Microsoft.UI.Xaml.Controls {
                     // Fall back to setAttribute if contentWindow access fails (cross-origin)
                     iframe.setAttribute("src", url);
                 }
+            }
+        }
+
+        // Resolves a URL as navigating the frame does, since a virtual host mapping navigates to a path relative to the app.
+        private static toAbsoluteUrl(url: string): string {
+            try {
+                return new URL(url, document.baseURI).href;
+            } catch (e) {
+                // The browser can't navigate to it either.
+                return url;
             }
         }
 
