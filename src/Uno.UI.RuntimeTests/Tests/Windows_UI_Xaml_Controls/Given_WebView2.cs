@@ -215,6 +215,68 @@ public class Given_WebView2
 		}
 	}
 
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25735")]
+	public async Task When_Navigated_To_Sandboxed_Mapped_Content_Then_Navigation_Completes()
+	{
+		const string MappedUrl = "http://UnoNativeAssets/index.html";
+		const string MappedPath = "/WebContent/index.html";
+
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		string completedSource = null;
+		void OnNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+		{
+			if (sender.CoreWebView2.Source is { } source && source.EndsWith(MappedPath, StringComparison.Ordinal))
+			{
+				completedSource = source;
+			}
+		}
+
+		async Task<string> NavigateToMappedContent(string elementId, string sandbox)
+		{
+			// The frame's sandbox applies to the documents it loads from then on.
+			WasmSemanticDomHelper.InvokeBrowserJs(
+				$"(function(){{document.getElementById('{elementId}').setAttribute('sandbox', '{sandbox}');return '';}})()");
+
+			completedSource = null;
+			webView.CoreWebView2.Navigate(MappedUrl);
+			await TestServices.WindowHelper.WaitFor(
+				() => completedSource is not null,
+				timeoutMS: 10000,
+				message: $"NavigationCompleted should be raised for the mapped content (sandbox='{sandbox}'), with Source set to its URL.");
+
+			return completedSource;
+		}
+
+		StartCapturingBrowserErrors();
+		try
+		{
+			await UITestHelper.Load(webView);
+			await webView.EnsureCoreWebView2Async();
+			webView.CoreWebView2.SetVirtualHostNameToFolderMapping("UnoNativeAssets", "WebContent", CoreWebView2HostResourceAccessKind.Allow);
+			webView.NavigationCompleted += OnNavigationCompleted;
+			var elementId = GetIframeElementId(webView);
+
+			// Keeping the origin leaves the document readable (its scripts are off, which this test doesn't need).
+			var readableSource = await NavigateToMappedContent(elementId, "allow-same-origin");
+
+			// Without allow-same-origin the document gets an opaque origin, as with a Content-Security-Policy: sandbox header,
+			// so the browser hides its location and the URL known from the navigation has to be reported.
+			var hiddenSource = await NavigateToMappedContent(elementId, "");
+
+			Assert.AreEqual(readableSource, hiddenSource, "A hidden document should be reported with the same URL as a readable one.");
+			Assert.AreEqual(new Uri(readableSource), webView.Source);
+			Assert.AreEqual("", StopCapturingBrowserErrors(), "The browser should not report an error for the sandboxed load.");
+		}
+		finally
+		{
+			StopCapturingBrowserErrors();
+			webView.NavigationCompleted -= OnNavigationCompleted;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
 	private static void StartCapturingBrowserErrors()
 		=> WasmSemanticDomHelper.InvokeBrowserJs(
 			"(function(){var errors=window.__unoTestErrors=[];window.__unoTestOnError=function(e){errors.push(String(e.message));};" +
