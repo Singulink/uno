@@ -4,6 +4,9 @@ namespace Microsoft.UI.Xaml.Controls {
         private static unoExports: any;
         private static cachedPackageBase: string | null = null;
 
+        // The last URL known for each frame, because the location of a cross-origin document can't be read.
+        private static readonly lastKnownUrls = new WeakMap<HTMLIFrameElement, string>();
+
         public static buildImports(assembly: string) {
             if (!WebView.unoExports) {
                 (<any>window.Module).getAssemblyExports(assembly)
@@ -34,7 +37,8 @@ namespace Microsoft.UI.Xaml.Controls {
         }
 
         static getDocumentTitle(htmlId: string): string {
-            return (<HTMLIFrameElement>document.getElementById(htmlId)).contentDocument.title;
+            // A cross-origin document has no contentDocument.
+            return (<HTMLIFrameElement>document.getElementById(htmlId)).contentDocument?.title ?? "";
         }
 
         static setAttribute(htmlId: string, name: string, value: string) {
@@ -48,6 +52,7 @@ namespace Microsoft.UI.Xaml.Controls {
         static navigate(htmlId: string, url: string) {
             const iframe = document.getElementById(htmlId) as HTMLIFrameElement;
             if (iframe) {
+                WebView.lastKnownUrls.set(iframe, url);
                 try {
                     if (iframe.contentWindow) {
                         iframe.contentWindow.location.href = url;
@@ -99,8 +104,24 @@ namespace Microsoft.UI.Xaml.Controls {
 
         private static onLoad(event: Event) {
             const iframe = event.currentTarget as HTMLIFrameElement;
-            const absoluteUrl = iframe.contentWindow.location.href;
+            let absoluteUrl: string | null;
+            let isCrossOrigin = false;
+            try {
+                absoluteUrl = iframe.contentWindow.location.href;
+                WebView.lastKnownUrls.set(iframe, absoluteUrl);
+            } catch (e) {
+                // The browser hides the location of a cross-origin document (another site, a data: URL, a sandboxed page).
+                // Report the last URL known for the frame instead.
+                absoluteUrl = WebView.lastKnownUrls.get(iframe) ?? null;
+                isCrossOrigin = true;
+            }
+
             WebView.unoExports.DispatchLoadEvent(iframe.id, absoluteUrl);
+
+            if (isCrossOrigin) {
+                // Such a document can't be hooked for NewWindowRequested either.
+                return;
+            }
 
             try {
                 if (iframe.contentWindow && WebView.unoExports.DispatchNewWindowRequested) {

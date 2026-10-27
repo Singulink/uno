@@ -116,6 +116,59 @@ public class Given_WebView2
 		}
 	}
 
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	public async Task When_Navigated_To_Cross_Origin_Content_Then_Navigation_Completes()
+	{
+		// A data: URL gets an opaque origin, so the browser hides the iframe's location and document from the app.
+		const string DataUrl = "data:text/html;base64,PHRpdGxlPkNyb3NzLW9yaWdpbjwvdGl0bGU+PHA+Q3Jvc3Mtb3JpZ2luPC9wPg==";
+
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		CoreWebView2NavigationCompletedEventArgs completedArgs = null;
+		void OnNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+		{
+			if (sender.CoreWebView2.Source == DataUrl)
+			{
+				completedArgs = args;
+			}
+		}
+
+		StartCapturingBrowserErrors();
+		try
+		{
+			await UITestHelper.Load(webView);
+			await webView.EnsureCoreWebView2Async();
+			webView.NavigationCompleted += OnNavigationCompleted;
+
+			webView.CoreWebView2.Navigate(DataUrl);
+			await TestServices.WindowHelper.WaitFor(
+				() => completedArgs is not null,
+				timeoutMS: 10000,
+				message: "NavigationCompleted should be raised for the cross-origin document, with Source set to its URL.");
+
+			Assert.IsTrue(completedArgs.IsSuccess);
+			Assert.AreEqual(new Uri(DataUrl), webView.Source);
+			Assert.IsNotNull(webView.CoreWebView2.DocumentTitle, "Reading the title of a cross-origin document should not throw.");
+			Assert.AreEqual("", StopCapturingBrowserErrors(), "The browser should not report an error for the cross-origin load.");
+		}
+		finally
+		{
+			StopCapturingBrowserErrors();
+			webView.NavigationCompleted -= OnNavigationCompleted;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	private static void StartCapturingBrowserErrors()
+		=> WasmSemanticDomHelper.InvokeBrowserJs(
+			"(function(){var errors=window.__unoTestErrors=[];window.__unoTestOnError=function(e){errors.push(String(e.message));};" +
+			"window.addEventListener('error',window.__unoTestOnError);return '';})()");
+
+	private static string StopCapturingBrowserErrors()
+		=> WasmSemanticDomHelper.InvokeBrowserJs(
+			"(function(){var handler=window.__unoTestOnError;if(!handler){return '';}window.removeEventListener('error',handler);" +
+			"var errors=window.__unoTestErrors.join('\\n');delete window.__unoTestOnError;delete window.__unoTestErrors;return errors;})()");
+
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private static async Task<(WeakReference, string)> LoadNavigateAndUnloadWebView2()
 	{
