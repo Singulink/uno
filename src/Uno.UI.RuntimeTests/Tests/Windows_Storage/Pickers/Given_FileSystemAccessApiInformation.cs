@@ -68,6 +68,37 @@ public class Given_FileSystemAccessApiInformation
 	[DataRow(false)]
 	public async Task When_Download_Is_Committed_Then_The_Browser_Downloads_The_Content(bool hasCreateWritable)
 	{
+		var text = await DownloadAsync(file => FileIO.WriteTextAsync(file, "Hello, world!").AsTask(), hasCreateWritable, ReadTextScript);
+
+		Assert.AreEqual("Hello, world!", text);
+	}
+
+	// The download is staged in chunks of StagingChunkSize. Safari writes a view's whole underlying buffer,
+	// ignoring its byteOffset and byteLength (https://bugs.webkit.org/show_bug.cgi?id=302733).
+	[TestMethod]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/24130")]
+	[DataRow(2 * StagingChunkSize + 12345, true)]
+	[DataRow(2 * StagingChunkSize + 12345, false)]
+	[DataRow(2 * StagingChunkSize, true)]
+	public async Task When_Download_Spans_Several_Chunks_Then_The_Browser_Downloads_All_Of_It(int length, bool hasCreateWritable)
+	{
+		var content = new byte[length];
+		for (var i = 0; i < length; i++)
+		{
+			// The period doesn't divide the chunk size, so bytes written at the wrong offset change the hash.
+			content[i] = (byte)(i % 251);
+		}
+
+		var lengthAndHash = await DownloadAsync(file => FileIO.WriteBytesAsync(file, content).AsTask(), hasCreateWritable, ReadLengthAndHashScript);
+
+		Assert.AreEqual(FormattableString.Invariant($"{length}:{Fnv1a(content)}"), lengthAndHash);
+	}
+
+	private const int StagingChunkSize = 2 * 1024 * 1024;
+
+	// Picks a file with the download picker, writes it, commits it and returns what the read script makes of the download.
+	private static async Task<string> DownloadAsync(Func<StorageFile, Task> write, bool hasCreateWritable, string readScript)
+	{
 		var previousConfiguration = WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration;
 		WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration = WasmPickerConfiguration.DownloadUpload;
 		InvokeJS(CaptureDownloadsScript.Replace("HAS_CREATE_WRITABLE", hasCreateWritable ? "true" : "false"));
@@ -82,15 +113,16 @@ public class Given_FileSystemAccessApiInformation
 			Assert.IsNotNull(file);
 
 			CachedFileManager.DeferUpdates(file);
-			await FileIO.WriteTextAsync(file, "Hello, world!");
+			await write(file);
 			Assert.AreEqual(FileUpdateStatus.Complete, await CachedFileManager.CompleteUpdatesAsync(file));
 
 			Assert.AreEqual("1", InvokeJS("String(globalThis.__unoTestDownloads.items.length)"));
 			Assert.AreEqual("Report.txt", InvokeJS("globalThis.__unoTestDownloads.items[0].name"));
 
-			InvokeJS(ReadDownloadScript);
-			await TestServices.WindowHelper.WaitFor(() => InvokeJS("String(globalThis.__unoTestDownloads.text !== undefined)") == "true", timeoutMS: 5000);
-			Assert.AreEqual("Hello, world!", InvokeJS("globalThis.__unoTestDownloads.text"));
+			InvokeJS(readScript);
+			await TestServices.WindowHelper.WaitFor(() => InvokeJS("String(globalThis.__unoTestDownloads.result !== undefined)") == "true", timeoutMS: 10000);
+
+			return InvokeJS("globalThis.__unoTestDownloads.result");
 		}
 		finally
 		{
@@ -102,6 +134,17 @@ public class Given_FileSystemAccessApiInformation
 				await file.DeleteAsync();
 			}
 		}
+	}
+
+	private static uint Fnv1a(byte[] data)
+	{
+		var hash = 2166136261u;
+		foreach (var value in data)
+		{
+			hash = unchecked((hash ^ value) * 16777619u);
+		}
+
+		return hash;
 	}
 
 	// Records the downloads instead of starting them, and optionally hides createWritable.
@@ -128,12 +171,30 @@ public class Given_FileSystemAccessApiInformation
 		})()
 		""";
 
-	private const string ReadDownloadScript = """
+	private const string ReadTextScript = """
 		(function () {
 			const state = globalThis.__unoTestDownloads;
 			fetch(state.items[0].href)
 				.then(response => response.text())
-				.then(text => state.text = text, error => state.text = "Failed to read the download: " + error);
+				.then(text => state.result = text, error => state.result = "Failed to read the download: " + error);
+			return "";
+		})()
+		""";
+
+	// Returns "<length>:<FNV-1a hash>" of the download.
+	private const string ReadLengthAndHashScript = """
+		(function () {
+			const state = globalThis.__unoTestDownloads;
+			fetch(state.items[0].href)
+				.then(response => response.arrayBuffer())
+				.then(buffer => {
+					const bytes = new Uint8Array(buffer);
+					let hash = 2166136261;
+					for (let i = 0; i < bytes.length; i++) {
+						hash = Math.imul(hash ^ bytes[i], 16777619) >>> 0;
+					}
+					state.result = bytes.length + ":" + hash;
+				}, error => state.result = "Failed to read the download: " + error);
 			return "";
 		})()
 		""";
