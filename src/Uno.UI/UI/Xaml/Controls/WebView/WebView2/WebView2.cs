@@ -72,7 +72,8 @@ public partial class WebView2 : Control, IWebView
 		}
 
 #if __SKIA__
-		_coreWebView2.OnLoaded();
+		// A CoreWebView2Initialized handler may have closed the WebView2.
+		_coreWebView2?.OnLoaded();
 #endif
 	}
 

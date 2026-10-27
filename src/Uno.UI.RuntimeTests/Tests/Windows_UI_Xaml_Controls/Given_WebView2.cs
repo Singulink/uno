@@ -156,6 +156,41 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
+	public async Task When_Closed_From_CoreWebView2Initialized_On_Load()
+	{
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		webView.CoreWebView2Initialized += (sender, args) => sender.Close();
+
+		// Loaded handlers' exceptions are caught and reported here.
+		Exception unhandledException = null;
+		void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
+		{
+			unhandledException ??= args.Exception;
+			args.Handled = true;
+		}
+
+		Microsoft.UI.Xaml.Application.Current.UnhandledException += OnUnhandledException;
+
+		try
+		{
+			await UITestHelper.Load(webView);
+
+			Assert.IsNull(unhandledException, $"Closing the WebView2 from CoreWebView2Initialized should not throw: {unhandledException}");
+			Assert.IsNull(webView.CoreWebView2, "The CoreWebView2Initialized handler should have closed the WebView2.");
+
+			var root = VisualTreeHelper.GetChild(webView, 0) as ContentPresenter;
+			Assert.IsNull(root?.Content, "A closed WebView2 should not present an iframe.");
+		}
+		finally
+		{
+			Microsoft.UI.Xaml.Application.Current.UnhandledException -= OnUnhandledException;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
 	public async Task When_Unloaded_While_Referenced_Then_Native_Iframe_Is_Kept()
 	{
 		var webView = new WebView2 { Width = 200, Height = 200 };
