@@ -331,6 +331,10 @@ public class Given_WebView2
 		{
 			webView.NavigationCompleted -= OnNavigationCompleted;
 		}
+
+		// On WebAssembly, NavigationCompleted is raised before the queued navigation loads the document.
+		var elementId = GetIframeElementId(webView);
+		await TestServices.WindowHelper.WaitFor(() => ReadMarker(elementId) == marker, timeoutMS: 10000, message: "The iframe should load the marker.");
 	}
 
 	private static string GetIframeElementId(WebView2 webView)
