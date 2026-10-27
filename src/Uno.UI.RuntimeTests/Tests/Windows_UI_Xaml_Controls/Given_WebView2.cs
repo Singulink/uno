@@ -190,6 +190,52 @@ public class Given_WebView2
 	}
 
 	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm | RuntimeTestPlatforms.SkiaDesktop)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
+	public async Task When_Closed_From_CoreWebView2Initialized_Before_Template_Then_EnsureCoreWebView2Async_Completes()
+	{
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		webView.CoreWebView2Initialized += (sender, args) => sender.Close();
+
+		// As in WinUI, closing the WebView2 from CoreWebView2Initialized doesn't fail the call.
+		await webView.EnsureCoreWebView2Async().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+		Assert.IsNull(webView.CoreWebView2, "The CoreWebView2Initialized handler should have closed the WebView2.");
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
+	public async Task When_Closed_From_CoreWebView2Initialized_After_Template_Then_EnsureCoreWebView2Async_Completes()
+	{
+		var border = new Border { Width = 200, Height = 200 };
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		webView.CoreWebView2Initialized += (sender, args) => sender.Close();
+
+		try
+		{
+			await UITestHelper.Load(border);
+
+			// Lay the WebView2 out so it creates its iframe, then call before its Loaded raises CoreWebView2Initialized.
+			border.Child = webView;
+			webView.UpdateLayout();
+			GetIframeElementId(webView);
+
+			// As in WinUI, closing the WebView2 from CoreWebView2Initialized doesn't fail the call.
+			await webView.EnsureCoreWebView2Async().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+			Assert.IsNull(webView.CoreWebView2, "The CoreWebView2Initialized handler should have closed the WebView2.");
+
+			var root = VisualTreeHelper.GetChild(webView, 0) as ContentPresenter;
+			Assert.IsNull(root?.Content, "A closed WebView2 should not present an iframe.");
+		}
+		finally
+		{
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
 	public async Task When_Unloaded_While_Referenced_Then_Native_Iframe_Is_Kept()
 	{

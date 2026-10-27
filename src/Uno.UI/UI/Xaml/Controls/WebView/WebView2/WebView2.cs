@@ -89,6 +89,12 @@ public partial class WebView2 : Control, IWebView
 			if (!_coreWebView2Initialized)
 			{
 				EnsureCoreWebView2();
+
+				if (_coreWebView2 is null)
+				{
+					// As in WinUI, a CoreWebView2Initialized handler that closes the WebView2 doesn't fail the call.
+					return;
+				}
 			}
 
 			await coreWebView2.EnsureNativeWebViewAsync();
