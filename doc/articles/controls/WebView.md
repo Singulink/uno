@@ -46,6 +46,23 @@ In case of WebAssembly, the control is supported via a native `<iframe>` element
 - The [`frame-ancestors` Content Security Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/frame-ancestors) can be used to allow embedding a site you have control over, while at the same time blocking third-party sites from embedding
 - External site you are embedding must not block embedding via [`X-FRAME-OPTIONS` header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options)
 
+## Browser features available to pages (WebAssembly)
+
+On WebAssembly, pages shown in a `WebView2` can play media automatically, go fullscreen, play protected (DRM) media, use picture-in-picture and copy to the clipboard, as they could in a browser tab, whatever site they come from. Pages from other sites can't use features that need the user's permission, such as the camera, the microphone or the location, by default.
+
+To change which features pages from other sites can use, edit `Uno.UI.FeatureConfiguration.WebView2.PermissionsPolicy` during application startup, before any `WebView2` is loaded. For example, this stops pages from other sites from playing media automatically and lets pages from `https://example.com` use the camera:
+
+```csharp
+public App()
+{
+    Uno.UI.FeatureConfiguration.WebView2.PermissionsPolicy.Remove("autoplay");
+    Uno.UI.FeatureConfiguration.WebView2.PermissionsPolicy.Add("camera https://example.com");
+    this.InitializeComponent();
+}
+```
+
+Each entry is a [Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Permissions_Policy) directive, written to the [`allow` attribute](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#allow) of the `<iframe>` that shows the web content when a `WebView2` is first loaded. The list holds `autoplay`, `fullscreen`, `encrypted-media`, `picture-in-picture` and `clipboard-write` by default, and the frame also gets the legacy `allowfullscreen` attribute while `fullscreen` applies to every page. A feature name alone applies to every page the web view shows, and a feature name followed by an allowlist, such as `camera https://example.com`, is written as is. A feature without an entry gets the browser's default, which for most features lets pages from the app's own origin use it, such as content shown with `NavigateToString`. The `'none'` allowlist, as in `autoplay 'none'`, blocks a feature for every page. The browser still asks the user before a page uses a feature that needs permission, such as the camera or the microphone, and a feature can only be passed on if the app's own page may use it. The setting has no effect on other targets.
+
 ## Executing JavaScript
 
 When a page is loaded inside the `WebView2` control, you can execute custom JavaScript code. To do this, call the `ExecuteScriptAsync` method:
