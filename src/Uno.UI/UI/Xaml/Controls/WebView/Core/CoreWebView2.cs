@@ -196,6 +196,14 @@ public partial class CoreWebView2
 		(_nativeWebView as ISupportsClose)?.Close();
 		_nativeWebView = null;
 
+		// A closed WebView2 never creates its native WebView, so end a pending EnsureCoreWebView2Async.
+		var closedException = new ObjectDisposedException(nameof(Microsoft.UI.Xaml.Controls.WebView2), Microsoft.UI.Xaml.Controls.WebView2.ClosedMessage);
+		if (_nativeWebViewInitializedTcs.TrySetException(closedException))
+		{
+			// Nothing may be waiting for it; don't report the exception as unobserved.
+			_ = _nativeWebViewInitializedTcs.Task.Exception;
+		}
+
 		return true;
 	}
 

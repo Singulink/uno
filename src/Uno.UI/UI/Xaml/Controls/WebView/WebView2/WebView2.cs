@@ -18,7 +18,7 @@ namespace Microsoft.UI.Xaml.Controls;
 public partial class WebView2 : Control, IWebView
 {
 	// The messages WinUI uses for the same cases.
-	private const string ClosedMessage = "Cannot create CoreWebView2 for Closed WebView2 element.";
+	internal const string ClosedMessage = "Cannot create CoreWebView2 for Closed WebView2 element.";
 	private const string NoCoreWebView2Message =
 		"Failed because a valid CoreWebView2 is not present. Make sure one was created, for example by calling EnsureCoreWebView2Async() API.";
 

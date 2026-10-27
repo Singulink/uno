@@ -139,6 +139,23 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25736")]
+	public async Task When_Closed_Before_Loaded_Then_Pending_EnsureCoreWebView2Async_Throws()
+	{
+		var webView = new WebView2 { Width = 200, Height = 200 };
+
+		// The WebView2 isn't loaded, so the operation waits for its native WebView.
+		var ensureTask = webView.EnsureCoreWebView2Async().AsTask();
+		Assert.IsFalse(ensureTask.IsCompleted, "EnsureCoreWebView2Async should wait for the WebView2 to load.");
+
+		webView.Close();
+
+		await TestServices.WindowHelper.WaitFor(() => ensureTask.IsCompleted, timeoutMS: 5000, message: "Close should end a pending EnsureCoreWebView2Async.");
+		await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () => await ensureTask);
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
 	public async Task When_Unloaded_While_Referenced_Then_Native_Iframe_Is_Kept()
 	{
 		var webView = new WebView2 { Width = 200, Height = 200 };
