@@ -308,6 +308,8 @@ await FileIO.WriteTextAsync(file, "Hello, world!");
 await CachedFileManager.CompleteUpdatesAsync(file);
 ```
 
+<a name="checking-whether-file-system-access-api-is-supported"></a>
+
 ### Checking whether the pickers are supported
 
 The WASM specific `Uno.Storage.Pickers.FileSystemAccessApiInformation` API reports which pickers can be used in the current browser under the current `WasmConfiguration` (see [Choosing supported type of pickers](#choosing-supported-type-of-pickers)):
@@ -381,9 +383,9 @@ Uno.WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration =
 
 The allowed values for the configuration are:
 
--`FileSystemAccessApiWithFallback` - defaults to File System Access API, but falls back to download/upload pickers if not available
--`FileSystemAccessApi` - uses File System Access API only. If not available, pickers will throw `NotSupportedException`
--`DownloadUpload` - uses download/upload pickers only.
+* `FileSystemAccessApiWithFallback` - defaults to File System Access API, but falls back to download/upload pickers if not available
+* `FileSystemAccessApi` - uses File System Access API only. If not available, pickers will throw `NotSupportedException`
+* `DownloadUpload` - uses download/upload pickers only.
 
 ### Security considerations
 
