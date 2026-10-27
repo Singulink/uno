@@ -235,6 +235,7 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 		[TestMethod]
 		[RequiresFullWindow]
 		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Native)]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25716")]
 		[DataRow(0, DisplayName = "Run")]
 		[DataRow(1, DisplayName = "Run in a Span")]
 		[DataRow(2, DisplayName = "Run in nested Spans")]
