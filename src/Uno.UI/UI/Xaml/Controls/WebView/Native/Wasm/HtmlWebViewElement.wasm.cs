@@ -21,6 +21,18 @@ internal class HtmlWebViewElement : UIElement, INativeWebView
 
 		SetAttribute("background-color", "transparent");
 
+		// The policy applies to the documents the frame loads after it is set, so it must precede the first navigation.
+		var (allow, allowFullscreen) = WebViewFramePermissions.Get();
+		if (allow is not null)
+		{
+			SetAttribute("allow", allow);
+		}
+
+		if (allowFullscreen)
+		{
+			SetAttribute("allowfullscreen", "");
+		}
+
 		IFrameLoaded += OnNavigationCompleted;
 	}
 

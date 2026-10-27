@@ -87,6 +87,7 @@
 	  <Compile Include="..\Uno.UI\UI\Xaml\Controls\TextBox\InputScopeExtensions.wasm.cs" Link="UI\Xaml\Controls\TextBox\InputScopeExtensions.wasm.cs" />
 	  <Compile Include="..\Uno.UI\UI\Xaml\Controls\WebView\Native\Wasm\NativeWebView.Interop.wasm.cs" Link="UI\Xaml\Controls\WebView\NativeWebView.Interop.wasm.cs" />
 	  <Compile Include="..\Uno.UI\UI\Xaml\Controls\WebView\Native\Wasm\NativeWebView.wasm.cs" Link="UI\Xaml\Controls\WebView\NativeWebView.wasm.cs" />
+	  <Compile Include="..\Uno.UI\UI\Xaml\Controls\WebView\Native\Wasm\WebViewFramePermissions.wasm.cs" Link="UI\Xaml\Controls\WebView\WebViewFramePermissions.wasm.cs" />
 	</ItemGroup>
 
 	<ItemGroup>

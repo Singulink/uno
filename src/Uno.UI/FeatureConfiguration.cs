@@ -927,6 +927,35 @@ namespace Uno.UI
 			/// </remarks>
 			public static string AdditionalBrowserArguments { get; set; }
 
+			/// <summary>
+			/// The browser features that pages shown in a <see cref="Microsoft.UI.Xaml.Controls.WebView2"/> can use, as Permissions
+			/// Policy directives.
+			/// </summary>
+			/// <remarks>
+			/// <para><b>WebAssembly only.</b> It is a no-op on every other target.</para>
+			/// <para>By default, pages can play media automatically, go fullscreen, play protected (DRM) media, use picture-in-picture
+			/// and copy to the clipboard, as they could in a browser tab, whatever site they come from: the list holds <c>autoplay</c>,
+			/// <c>fullscreen</c>, <c>encrypted-media</c>, <c>picture-in-picture</c> and <c>clipboard-write</c>. Features that need the user's permission, such as <c>camera</c> or <c>microphone</c>, aren't in the list, so pages from
+			/// other sites can't use them.</para>
+			/// <para>Each entry is a directive, written to the <c>allow</c> attribute of the <c>iframe</c> that shows the web content
+			/// when the <c>WebView2</c> is first loaded, so changes apply to web views loaded afterwards. A feature name alone applies
+			/// to every page the web view shows, and a feature name followed by an allowlist, such as <c>camera https://example.com</c>,
+			/// is written as is. A feature without an entry gets the browser's default, which for most features lets pages from the
+			/// app's own origin use it, such as content shown with <c>NavigateToString</c>. The <c>'none'</c> allowlist, as in
+			/// <c>autoplay 'none'</c>, blocks a feature for every page. While <c>fullscreen</c> applies to every page, the legacy
+			/// <c>allowfullscreen</c> attribute is set as well.</para>
+			/// <para>The browser still asks the user before a page uses a feature that needs permission, and a feature can only be
+			/// passed on if the app's own page may use it.</para>
+			/// </remarks>
+			public static IList<string> PermissionsPolicy { get; } = new List<string>
+			{
+				"autoplay",
+				"fullscreen",
+				"encrypted-media",
+				"picture-in-picture",
+				"clipboard-write",
+			};
+
 #if __IOS__ || UNO_REFERENCE_API
 			/// <summary>
 			/// Sets whether the <see cref="WebView2"/> object is inspectable or not.
