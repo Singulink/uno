@@ -82,6 +82,61 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	public async Task When_Closed_Then_Native_Iframe_Is_Removed()
+	{
+		var webView = new WebView2 { Width = 200, Height = 200 };
+
+		try
+		{
+			await UITestHelper.Load(webView);
+			await NavigateToMarker(webView, "closed");
+			var elementId = GetIframeElementId(webView);
+
+			webView.Close();
+
+			Assert.IsFalse(IsInDom(elementId), "Close should remove the iframe from the DOM right away.");
+			Assert.IsNull(webView.CoreWebView2, "As in WinUI, CoreWebView2 should be null once the WebView2 is closed.");
+			Assert.IsFalse(webView.CanGoBack);
+			Assert.IsFalse(webView.CanGoForward);
+
+			// As in WinUI: a second Close does nothing, GoBack and GoForward do nothing,
+			// and the members that need a browser throw.
+			webView.Close();
+			webView.GoBack();
+			webView.GoForward();
+			await Assert.ThrowsExactlyAsync<ObjectDisposedException>(async () => await webView.EnsureCoreWebView2Async());
+			Assert.ThrowsExactly<ObjectDisposedException>(() => webView.Source = new Uri("https://platform.uno/"));
+			Assert.ThrowsExactly<InvalidOperationException>(() => webView.NavigateToString("<p>closed</p>"));
+			Assert.ThrowsExactly<InvalidOperationException>(() => webView.Reload());
+			Assert.ThrowsExactly<InvalidOperationException>(() => webView.ExecuteScriptAsync("1"));
+
+			// Unloading and loading the closed WebView2 again must neither touch the removed iframe nor create a new one.
+			TestServices.WindowHelper.WindowContent = null;
+			await TestServices.WindowHelper.WaitForIdle();
+			await UITestHelper.Load(webView);
+
+			var root = VisualTreeHelper.GetChild(webView, 0) as ContentPresenter;
+			Assert.IsNull(root?.Content, "A closed WebView2 should not present an iframe.");
+			Assert.IsNull(webView.CoreWebView2);
+		}
+		finally
+		{
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	public async Task When_Closed_Then_Collectable()
+	{
+		var (webViewReference, elementId) = await LoadNavigateAndUnloadWebView2(close: true);
+
+		Assert.IsFalse(IsInDom(elementId), "Close should remove the iframe from the DOM.");
+		Assert.IsTrue(await TestHelper.TryWaitUntilCollected(webViewReference), "A closed WebView2 should be collectable once it left the tree.");
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
 	public async Task When_Unloaded_While_Referenced_Then_Native_Iframe_Is_Kept()
 	{
 		var webView = new WebView2 { Width = 200, Height = 200 };
@@ -170,7 +225,7 @@ public class Given_WebView2
 			"var errors=window.__unoTestErrors.join('\\n');delete window.__unoTestOnError;delete window.__unoTestErrors;return errors;})()");
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
-	private static async Task<(WeakReference, string)> LoadNavigateAndUnloadWebView2()
+	private static async Task<(WeakReference, string)> LoadNavigateAndUnloadWebView2(bool close = false)
 	{
 		var webView = new WebView2 { Width = 200, Height = 200 };
 
@@ -180,8 +235,14 @@ public class Given_WebView2
 
 			// A navigated WebView2 registers load and message listeners, which must not keep it alive.
 			await NavigateToMarker(webView, "collected");
+			var elementId = GetIframeElementId(webView);
 
-			return (new WeakReference(webView), GetIframeElementId(webView));
+			if (close)
+			{
+				webView.Close();
+			}
+
+			return (new WeakReference(webView), elementId);
 		}
 		finally
 		{

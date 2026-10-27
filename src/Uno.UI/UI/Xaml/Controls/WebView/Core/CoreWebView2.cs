@@ -30,6 +30,7 @@ public partial class CoreWebView2
 	private readonly List<WebResourceRequestedFilter> _webResourceRequestedFilters = new();
 	internal long _navigationId;
 	private object? _processedSource;
+	private bool _isClosed;
 
 	internal CoreWebView2(IWebView owner)
 	{
@@ -179,8 +180,33 @@ public partial class CoreWebView2
 		return await _nativeWebView.InvokeScriptAsync(script, arguments, ct);
 	}
 
+	/// <summary>
+	/// Releases the native WebView for <c>WebView2.Close()</c>. Returns false, and changes nothing,
+	/// when the native WebView can't release its browser.
+	/// </summary>
+	internal bool TryClose()
+	{
+		if (_nativeWebView is not null and not ISupportsClose)
+		{
+			return false;
+		}
+
+		_isClosed = true;
+		DetachWebResourceRequestedSupport();
+		(_nativeWebView as ISupportsClose)?.Close();
+		_nativeWebView = null;
+
+		return true;
+	}
+
 	internal void OnOwnerApplyTemplate()
 	{
+		if (_isClosed)
+		{
+			// As in WinUI, a closed WebView2 doesn't create a browser again.
+			return;
+		}
+
 		DetachWebResourceRequestedSupport();
 		_nativeWebView = GetNativeWebViewFromTemplate();
 		AttachWebResourceRequestedSupport();
@@ -331,7 +357,7 @@ public partial class CoreWebView2
 	{
 		if (_nativeWebView == null)
 		{
-			if (_owner.IsLoaded)
+			if (_owner.IsLoaded && !_isClosed)
 			{
 				_owner.Log().Warn(
 					"This WebView control instance does not have a native WebView child, " +

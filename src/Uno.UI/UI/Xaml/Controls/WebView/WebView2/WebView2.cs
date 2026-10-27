@@ -17,6 +17,12 @@ namespace Microsoft.UI.Xaml.Controls;
 #endif
 public partial class WebView2 : Control, IWebView
 {
+	// The messages WinUI uses for the same cases.
+	private const string ClosedMessage = "Cannot create CoreWebView2 for Closed WebView2 element.";
+	private const string NoCoreWebView2Message =
+		"Failed because a valid CoreWebView2 is not present. Make sure one was created, for example by calling EnsureCoreWebView2Async() API.";
+
+	private CoreWebView2? _coreWebView2;
 	private bool _sourceChangeFromCore;
 	private bool _coreWebView2Initialized;
 
@@ -27,12 +33,12 @@ public partial class WebView2 : Control, IWebView
 	{
 		DefaultStyleKey = typeof(WebView2);
 
-		CoreWebView2 = new CoreWebView2(this);
-		CoreWebView2.HistoryChanged += CoreWebView2_HistoryChanged;
-		CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
-		CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
-		CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
-		CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+		_coreWebView2 = new CoreWebView2(this);
+		_coreWebView2.HistoryChanged += CoreWebView2_HistoryChanged;
+		_coreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
+		_coreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
+		_coreWebView2.SourceChanged += CoreWebView2_SourceChanged;
+		_coreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
 
 		Loaded += WebView2_Loaded;
 #if __SKIA__
@@ -40,7 +46,10 @@ public partial class WebView2 : Control, IWebView
 #endif
 	}
 
-	public CoreWebView2 CoreWebView2 { get; }
+	/// <summary>
+	/// Gets the CoreWebView2 of this control, or null once the control is closed.
+	/// </summary>
+	public CoreWebView2 CoreWebView2 => _coreWebView2!;
 
 	bool IWebView.IsLoaded => IsLoaded;
 
@@ -48,45 +57,87 @@ public partial class WebView2 : Control, IWebView
 
 	CoreDispatcher IWebView.Dispatcher => Dispatcher;
 
-	protected override void OnApplyTemplate() => CoreWebView2.OnOwnerApplyTemplate();
+	protected override void OnApplyTemplate() => _coreWebView2?.OnOwnerApplyTemplate();
 
 	private void WebView2_Loaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
 	{
+		if (_coreWebView2 is null)
+		{
+			return;
+		}
+
 		if (!_coreWebView2Initialized)
 		{
 			EnsureCoreWebView2();
 		}
 
 #if __SKIA__
-		CoreWebView2.OnLoaded();
+		_coreWebView2.OnLoaded();
 #endif
 	}
 
 #if __SKIA__
-	private void WebView2_Unloaded(object sender, RoutedEventArgs e) => CoreWebView2?.OnUnloaded();
+	private void WebView2_Unloaded(object sender, RoutedEventArgs e) => _coreWebView2?.OnUnloaded();
 #endif
 
 	public IAsyncAction EnsureCoreWebView2Async() =>
 		AsyncAction.FromTask(async ct =>
 		{
+			var coreWebView2 = _coreWebView2 ?? throw new ObjectDisposedException(nameof(WebView2), ClosedMessage);
+
 			if (!_coreWebView2Initialized)
 			{
 				EnsureCoreWebView2();
 			}
 
-			await CoreWebView2.EnsureNativeWebViewAsync();
+			await coreWebView2.EnsureNativeWebViewAsync();
 		});
 
 	public IAsyncOperation<string?> ExecuteScriptAsync(string javascriptCode) =>
-		CoreWebView2.ExecuteScriptAsync(javascriptCode);
+		GetCoreWebView2OrThrow(nameof(ExecuteScriptAsync)).ExecuteScriptAsync(javascriptCode);
 
-	public void Reload() => CoreWebView2.Reload();
+	public void Reload() => GetCoreWebView2OrThrow(nameof(Reload)).Reload();
 
-	public void GoForward() => CoreWebView2.GoForward();
+	public void GoForward() => _coreWebView2?.GoForward();
 
-	public void GoBack() => CoreWebView2.GoBack();
+	public void GoBack() => _coreWebView2?.GoBack();
 
-	public void NavigateToString(string htmlContent) => CoreWebView2.NavigateToString(htmlContent);
+	public void NavigateToString(string htmlContent) => GetCoreWebView2OrThrow(nameof(NavigateToString)).NavigateToString(htmlContent);
+
+#if __SKIA__
+	/// <summary>
+	/// Closes the WebView2 and releases its browser. Afterwards, <see cref="CoreWebView2"/> is null and the control can't navigate.
+	/// </summary>
+	public void Close()
+	{
+		if (_coreWebView2 is not { } coreWebView2)
+		{
+			return;
+		}
+
+		if (!coreWebView2.TryClose())
+		{
+			// This platform's native WebView can't release its browser yet.
+			global::Windows.Foundation.Metadata.ApiInformation.TryRaiseNotImplemented("Microsoft.UI.Xaml.Controls.WebView2", "Close()");
+			return;
+		}
+
+		coreWebView2.HistoryChanged -= CoreWebView2_HistoryChanged;
+		coreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
+		coreWebView2.NavigationCompleted -= CoreWebView2_NavigationCompleted;
+		coreWebView2.SourceChanged -= CoreWebView2_SourceChanged;
+		coreWebView2.WebMessageReceived -= CoreWebView2_WebMessageReceived;
+		_coreWebView2 = null;
+
+		(CanGoBack, CanGoForward) = (false, false);
+	}
+#endif
+
+	private void NavigateFromSource(string targetUrl) =>
+		(_coreWebView2 ?? throw new ObjectDisposedException(nameof(WebView2), ClosedMessage)).Navigate(targetUrl);
+
+	private CoreWebView2 GetCoreWebView2OrThrow(string memberName) =>
+		_coreWebView2 ?? throw new InvalidOperationException($"{memberName}(): {NoCoreWebView2Message}");
 
 	private void EnsureCoreWebView2()
 	{
