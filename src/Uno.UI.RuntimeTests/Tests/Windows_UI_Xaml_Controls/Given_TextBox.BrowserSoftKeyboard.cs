@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Private.Infrastructure;
+using Uno.Disposables;
 using Uno.UI.RuntimeTests.Helpers;
 using Windows.System;
 using static Private.Infrastructure.TestServices;
@@ -1002,8 +1003,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Hardware_Keyboard_Enter_Pressed()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1020,8 +1024,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Hardware_Keyboard_Enter_Moves_Focus_On_Release()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var first = new TextBox();
 		var second = new TextBox();
 		var third = new TextBox();
@@ -1051,8 +1058,31 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
+	public async Task When_Hardware_Keyboard_Enter_Is_Named_On_Release_Only()
+	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
+		var SUT = await LoadFocusedTextBox("abc");
+		var keys = TrackEnterKey(SUT);
+
+		// The shape of an Enter that commits an IME composition: its keydown is reported as the IME's, and only
+		// its keyup names the key. The key is raised for the keyup, with a single release though it has a code.
+		DispatchKeyDown("Process", code: "Enter", keyCode: 229);
+		DispatchKeyUp("Enter", code: "Enter", keyCode: 13);
+		await WindowHelper.WaitForIdle();
+
+		CollectionAssert.AreEqual(new[] { "down", "up" }, keys);
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Hardware_Keyboard_Enter_Is_Named_On_Release_After_Line_Break()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1069,10 +1099,13 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	[DataRow("Process", "KeyA", 229, DisplayName = "A key the IME takes")]
 	[DataRow("Shift", "ShiftLeft", 16, DisplayName = "A modifier")]
 	public async Task When_Another_Key_Goes_Down_Before_Enter_Named_On_Release_After_Line_Break_Is_Released(string otherKey, string otherCode, int otherKeyCode)
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1099,10 +1132,13 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	[DataRow("Enter", 13, true, DisplayName = "Enter named on its press")]
 	[DataRow("Process", 229, false, DisplayName = "Enter named on its release only")]
 	public async Task When_Hardware_Keyboard_Enter_Follows_Line_Break_Without_Key_Events(string keyOnPress, int keyCodeOnPress, bool lineBreakFollows)
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1126,24 +1162,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
-	public async Task When_Hardware_Keyboard_Enter_Released_Without_Press()
-	{
-		var SUT = await LoadFocusedTextBox("abc");
-		var keys = TrackEnterKey(SUT);
-
-		// The release is all the input gets of an Enter that committed an IME composition. The key is raised for
-		// it, with a single release though the keyup has a code.
-		DispatchKeyUp("Enter", code: "Enter", keyCode: 13);
-		await WindowHelper.WaitForIdle();
-
-		CollectionAssert.AreEqual(new[] { "down", "up" }, keys);
-	}
-
-	[TestMethod]
-	[RunsOnUIThread]
-	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Enter_Has_No_Code()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1160,8 +1183,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Enter_Is_Named_On_Release_Only()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1176,8 +1202,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Enter_Is_Named_On_Release_After_Line_Break()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1193,8 +1222,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Enter_Is_Never_Named()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1213,8 +1245,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Line_Break_Comes_Without_Key_Events()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1232,12 +1267,16 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Line_Break_Follows_Hardware_Keyboard_Enter()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
-		// A keydown that was handled gets no line break. The next one is a soft keyboard's own.
+		// No line break comes for a keydown that a handler marked as handled, which this press stands for. The
+		// one that comes after its release is a soft keyboard's own.
 		DispatchKeyDown("Enter", code: "Enter", keyCode: 13);
 		DispatchKeyUp("Enter", code: "Enter", keyCode: 13);
 		DispatchBeforeInput("insertLineBreak");
@@ -1249,8 +1288,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_SoftKeyboard_Enter_In_Multiline_TextBox()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = new TextBox { AcceptsReturn = true, Text = "abc" };
 		await UITestHelper.Load(SUT);
 		await FocusHiddenInput(SUT);
@@ -1267,10 +1309,58 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
+	public async Task When_SoftKeyboard_Line_Break_Follows_Hardware_Keyboard_Enter_That_Moved_Focus()
+	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
+		var first = new TextBox();
+		var button = new Button { Content = "next" };
+		var second = new TextBox();
+		first.KeyDown += (_, e) =>
+		{
+			if (e.Key == VirtualKey.Enter)
+			{
+				button.Focus(FocusState.Keyboard);
+			}
+		};
+		await UITestHelper.Load(new StackPanel { Children = { first, button, second } });
+		await FocusHiddenInput(first);
+
+		// The press moves focus off the TextBox: its input is removed and never gets the release.
+		DispatchKeyDown("Enter", code: "Enter", keyCode: 13);
+		await WindowHelper.WaitForIdle();
+		Assert.IsFalse(HiddenInputExists(), "The hidden native input should be gone once focus is on the button.");
+
+		await FocusHiddenInput(second);
+		try
+		{
+			var keys = TrackEnterKey(second);
+
+			// A line break on the input of the next TextBox is a soft keyboard's own.
+			DispatchBeforeInput("insertLineBreak");
+			await WindowHelper.WaitForIdle();
+
+			CollectionAssert.AreEqual(new[] { "down", "up" }, keys);
+		}
+		finally
+		{
+			// The release of the first press went to no input. This one leaves the key released for the tests that follow.
+			DispatchKeyUp("Enter", code: "Enter", keyCode: 13);
+			await WindowHelper.WaitForIdle();
+		}
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	[DataRow(true, DisplayName = "Its release goes to the document")]
 	[DataRow(false, DisplayName = "Its release is lost")]
 	public async Task When_Enter_Named_On_Release_After_Line_Break_Moves_Focus_Off_The_TextBox(bool isReleased)
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = new TextBox();
 		var button = new Button { Content = "Next" };
 		SUT.KeyDown += (_, e) =>
@@ -1324,8 +1414,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Enter_And_Numpad_Enter_Presses_Overlap()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1344,10 +1437,13 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	[DataRow(true, DisplayName = "A soft keyboard's, named on its release only")]
 	[DataRow(false, DisplayName = "One the input only gets the release of")]
 	public async Task When_Enter_Named_On_Release_Only_Follows_Hardware_Keyboard_Enter_That_Moved_Focus(bool softKeyboard)
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var first = new TextBox();
 		var button = new Button { Content = "Next" };
 		var second = new TextBox();
@@ -1390,8 +1486,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Hardware_Keyboard_Enter_Is_Held()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var SUT = await LoadFocusedTextBox("abc");
 		var keys = TrackEnterKey(SUT);
 
@@ -1409,8 +1508,11 @@ public partial class Given_TextBox
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25173")]
 	public async Task When_Hardware_Keyboard_Enter_Pressed_On_Another_Control_Is_Released_On_The_TextBox()
 	{
+		using var _ = Disposable.Create(() => WindowHelper.WindowContent = null);
+
 		var button = new Button { Content = "Edit" };
 		var SUT = new TextBox();
 		// A Button handles the KeyDown of Enter itself.
@@ -1533,7 +1635,7 @@ public partial class Given_TextBox
 		=> InvokeBrowserJs($"(function(){{ const ev = new KeyboardEvent('keydown', {{ key: {JsString(key)}, code: {JsString(code)}, keyCode: {keyCode}, bubbles: true, cancelable: true }}); {HiddenInput}.dispatchEvent(ev); return ev.defaultPrevented ? '1' : '0'; }})()") == "1";
 
 	private static void DispatchKeyUp(string key, string code, int keyCode)
-		=> InvokeBrowserJs($"(function(){{ {HiddenInput}.dispatchEvent(new KeyboardEvent('keyup', {{ key: {JsString(key)}, code: {JsString(code)}, keyCode: {keyCode}, bubbles: true, cancelable: true }})); return ''; }})()");
+		=> InvokeBrowserJs($"(function(){{ {HiddenInput}?.dispatchEvent(new KeyboardEvent('keyup', {{ key: {JsString(key)}, code: {JsString(code)}, keyCode: {keyCode}, bubbles: true, cancelable: true }})); return ''; }})()");
 
 	// A keydown the browser sends to the document, as when no text input has focus.
 	private static void DispatchKeyDownOnDocument(string key, string code, int keyCode)
