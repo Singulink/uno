@@ -1809,27 +1809,34 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 				}
 			};
 
-			await UITestHelper.Load(outer);
+			try
+			{
+				await UITestHelper.Load(outer);
 
-			var injector = InputInjector.TryCreate() ?? throw new InvalidOperationException("Failed to init the InputInjector");
-			using var finger = injector.GetFinger();
+				var injector = InputInjector.TryCreate() ?? throw new InvalidOperationException("Failed to init the InputInjector");
+				using var finger = injector.GetFinger();
 
-			// The finger stays over the element, whether the element moves or not.
-			var bounds = inner.GetAbsoluteBounds();
-			var start = new Windows.Foundation.Point(bounds.X + 50, bounds.Y + bounds.Height / 2);
+				// The finger stays over the element, whether the element moves or not.
+				var bounds = inner.GetAbsoluteBounds();
+				var start = new Windows.Foundation.Point(bounds.X + 50, bounds.Y + bounds.Height / 2);
 
-			// The parent's manipulation mode doesn't prevent a plain tap.
-			finger.Tap(start);
-			await TestServices.WindowHelper.WaitForIdle();
+				// The parent's manipulation mode doesn't prevent a plain tap.
+				finger.Tap(start);
+				await TestServices.WindowHelper.WaitForIdle();
 
-			Assert.AreEqual(1, tappedCount);
+				Assert.AreEqual(1, tappedCount);
 
-			finger.Drag(start, new Windows.Foundation.Point(start.X + 200, start.Y));
-			await TestServices.WindowHelper.WaitForIdle();
+				finger.Drag(start, new Windows.Foundation.Point(start.X + 200, start.Y));
+				await TestServices.WindowHelper.WaitForIdle();
 
-			// The finger travelled 200 px on screen: even when the element moved with it, that is not a tap.
-			Assert.AreEqual(elementFollowsFinger ? 200 : 0, transform.X, 1);
-			Assert.AreEqual(1, tappedCount);
+				// The finger travelled 200 px on screen: even when the element moved with it, that is not a tap.
+				Assert.AreEqual(elementFollowsFinger ? 200 : 0, transform.X, 1);
+				Assert.AreEqual(1, tappedCount);
+			}
+			finally
+			{
+				TestServices.WindowHelper.WindowContent = null;
+			}
 		}
 
 #if HAS_UNO
