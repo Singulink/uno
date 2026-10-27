@@ -173,6 +173,7 @@ public class Given_WebView2
 
 	[TestMethod]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25735")]
 	public async Task When_Navigated_To_Cross_Origin_Content_Then_Navigation_Completes()
 	{
 		// A data: URL gets an opaque origin, so the browser hides the iframe's location and document from the app.
