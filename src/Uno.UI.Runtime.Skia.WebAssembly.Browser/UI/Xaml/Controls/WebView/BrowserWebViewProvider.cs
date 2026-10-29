@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
+using Uno.UI;
 using Uno.UI.NativeElementHosting;
+using Uno.UI.Runtime;
 using Uno.UI.Runtime.Skia;
 using Uno.UI.Xaml.Controls;
 
@@ -39,7 +41,7 @@ internal class BrowserWebViewProvider : INativeWebViewProvider
 
 	private static void SetPermissionsPolicy(BrowserHtmlElement frame)
 	{
-		var (allow, allowFullscreen) = WebViewFramePermissions.Get();
+		var (allow, allowFullscreen) = WebViewFramePermissions.GetFrameAttributes(FeatureConfiguration.WebView2.PermissionsPolicy);
 
 		if (allow is not null)
 		{

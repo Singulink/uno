@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
 using Uno.Foundation;
+using Uno.UI;
+using Uno.UI.Runtime;
 using Uno.UI.Xaml.Controls;
 using static __Microsoft.UI.Xaml.Controls.NativeWebView;
 
@@ -22,7 +24,7 @@ internal class HtmlWebViewElement : UIElement, INativeWebView
 		SetAttribute("background-color", "transparent");
 
 		// The policy applies to the documents the frame loads after it is set, so it must precede the first navigation.
-		var (allow, allowFullscreen) = WebViewFramePermissions.Get();
+		var (allow, allowFullscreen) = WebViewFramePermissions.GetFrameAttributes(FeatureConfiguration.WebView2.PermissionsPolicy);
 		if (allow is not null)
 		{
 			SetAttribute("allow", allow);

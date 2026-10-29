@@ -124,6 +124,10 @@
 		<Compile Include="..\SourceGenerators\Uno.UI.Tasks\ResourcesGenerator\ResourceQualifierPathResolver.cs">
 			<Link>Resources\ResourceQualifierPathResolver.cs</Link>
 		</Compile>
+		<!-- Pure parsing split out of the WebAssembly WebView2 frame setup, so it's testable without a browser. -->
+		<Compile Include="..\Uno.UI\UI\Xaml\Controls\WebView\Native\Wasm\WebViewFramePermissions.wasm.cs">
+			<Link>Windows_UI_XAML_Controls\WebView2Tests\WebViewFramePermissions.cs</Link>
+		</Compile>
 	</ItemGroup>
 	<ItemGroup>
 		<!--

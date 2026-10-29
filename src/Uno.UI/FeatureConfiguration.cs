@@ -933,27 +933,32 @@ namespace Uno.UI
 			/// </summary>
 			/// <remarks>
 			/// <para><b>WebAssembly only.</b> It is a no-op on every other target.</para>
-			/// <para>By default, pages can play media automatically, go fullscreen, play protected (DRM) media, use picture-in-picture
-			/// and copy to the clipboard, as they could in a browser tab, whatever site they come from: the list holds <c>autoplay</c>,
-			/// <c>fullscreen</c>, <c>encrypted-media</c>, <c>picture-in-picture</c> and <c>clipboard-write</c>. Features that need the user's permission, such as <c>camera</c> or <c>microphone</c>, aren't in the list, so pages from
-			/// other sites can't use them.</para>
-			/// <para>Each entry is a directive, written to the <c>allow</c> attribute of the <c>iframe</c> that shows the web content
-			/// when the <c>WebView2</c> is first loaded, so changes apply to web views loaded afterwards. A feature name alone applies
-			/// to every page the web view shows, and a feature name followed by an allowlist, such as <c>camera https://example.com</c>,
-			/// is written as is. A feature without an entry gets the browser's default, which for most features lets pages from the
-			/// app's own origin use it, such as content shown with <c>NavigateToString</c>. The <c>'none'</c> allowlist, as in
-			/// <c>autoplay 'none'</c>, blocks a feature for every page. While <c>fullscreen</c> applies to every page, the legacy
-			/// <c>allowfullscreen</c> attribute is set as well.</para>
-			/// <para>The browser still asks the user before a page uses a feature that needs permission, and a feature can only be
-			/// passed on if the app's own page may use it.</para>
+			/// <para>By default, pages can play media automatically, go fullscreen, play protected (DRM) media, copy to the clipboard
+			/// and use passkeys, as they could in a browser tab, whatever site they come from: the list holds <c>autoplay</c>,
+			/// <c>fullscreen</c>, <c>encrypted-media</c>, <c>clipboard-write</c>, <c>publickey-credentials-get</c> and
+			/// <c>publickey-credentials-create</c>. Safari never lets a page from another site create a passkey, whatever the list
+			/// holds. Features that need the user's permission, such as <c>camera</c> or
+			/// <c>microphone</c>, aren't in the list, so pages from other sites can't use them.</para>
+			/// <para>Each entry is a directive in the syntax of the <c>iframe</c> <c>allow</c> attribute (<c>feature allowlist</c>),
+			/// written to that attribute when a <c>WebView2</c> applies its template and creates its <c>iframe</c>, so changes apply
+			/// to the iframes created afterwards. A feature name alone applies to every page the web view shows, and a feature name
+			/// followed by an allowlist, such as <c>camera https://example.com</c>, is written as is. A later entry for a feature
+			/// replaces an earlier one, so adding <c>autoplay 'none'</c> overrides the default <c>autoplay</c> entry and blocks
+			/// autoplay for every page. A feature without an entry gets the browser's default, which for most features lets pages
+			/// from the app's own origin use it, such as content shown with <c>NavigateToString</c>. When <c>fullscreen</c> applies
+			/// to every page, it is written as the <c>allowfullscreen</c> attribute, which browsers read as <c>fullscreen *</c>.</para>
+			/// <para>The browser still asks the user before a page uses a feature that needs permission. If the app's server sends a
+			/// <c>Permissions-Policy</c> header that lists a feature, the header must also allow it for the origins of the pages it's
+			/// passed to; features the header doesn't list aren't affected.</para>
 			/// </remarks>
 			public static IList<string> PermissionsPolicy { get; } = new List<string>
 			{
 				"autoplay",
 				"fullscreen",
 				"encrypted-media",
-				"picture-in-picture",
 				"clipboard-write",
+				"publickey-credentials-get",
+				"publickey-credentials-create",
 			};
 
 #if __IOS__ || UNO_REFERENCE_API
