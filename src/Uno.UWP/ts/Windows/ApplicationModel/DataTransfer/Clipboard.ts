@@ -494,11 +494,11 @@ namespace Uno.Utils {
 			}
 		}
 
-		// The browser refusing the read (no permission, no gesture, no focus) is reported as a
-		// denial, an expected outcome logged at debug level only; anything else is a failure the
-		// application cannot do anything about.
-		private static failedRead(error: any): ClipboardContent {
-			const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
+		// A read the browser refuses (no permission or user activation, page not focused, blocked by the
+		// permissions policy) is an expected outcome, reported as a denial and logged at debug level; any
+		// other failure is one the application cannot do anything about, logged as an error.
+		private static failedRead(error: unknown): ClipboardContent {
+			const denied = error instanceof DOMException && error.name === "NotAllowedError";
 			if (denied) {
 				console.debug(`Clipboard: failed to read from clipboard: ${error}`);
 			} else {

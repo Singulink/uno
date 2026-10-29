@@ -904,13 +904,16 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25733")]
-	public async Task When_Clipboard_Read_Fails()
+	[DataRow("DataError")]
+	[DataRow("SecurityError")]
+	public async Task When_Clipboard_Read_Fails(string exceptionName)
 	{
 #if HAS_UNO
 		InvokeJs(
-			"""
-			navigator.clipboard.read = () => Promise.reject(new DOMException('The clipboard is unreadable.', 'DataError'));
+			$$"""
+			navigator.clipboard.read = () => Promise.reject(new DOMException('The clipboard is unreadable.', '{{exceptionName}}'));
 			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
 			return 'ok';
 			""");
@@ -918,7 +921,8 @@ partial class Given_Clipboard
 		{
 			StartConsoleCapture("The clipboard is unreadable.");
 
-			// A read failing for a reason other than permission is not reported as a denial, and is logged as an error.
+			// Browsers refuse a read with a NotAllowedError only: any other failure is not reported as a denial,
+			// and is logged as an error.
 			var view = Clipboard.GetContent();
 			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetTextAsync());
 			Assert.IsNotInstanceOfType<UnauthorizedAccessException>(exception.InnerException);
@@ -937,6 +941,7 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25733")]
 	public async Task When_Clipboard_Read_Is_Denied()
 	{
