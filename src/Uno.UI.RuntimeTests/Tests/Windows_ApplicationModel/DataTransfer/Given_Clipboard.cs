@@ -904,6 +904,7 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25733")]
 	public async Task When_Clipboard_Read_Fails()
 	{
 #if HAS_UNO
@@ -913,9 +914,10 @@ partial class Given_Clipboard
 			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
 			return 'ok';
 			""");
-		StartConsoleCapture("The clipboard is unreadable.");
 		try
 		{
+			StartConsoleCapture("The clipboard is unreadable.");
+
 			// A read failing for a reason other than permission is not reported as a denial, and is logged as an error.
 			var view = Clipboard.GetContent();
 			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetTextAsync());
@@ -935,6 +937,7 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25733")]
 	public async Task When_Clipboard_Read_Is_Denied()
 	{
 #if HAS_UNO
@@ -947,9 +950,10 @@ partial class Given_Clipboard
 			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
 			return 'ok';
 			""");
-		StartConsoleCapture("Read permission denied.");
 		try
 		{
+			StartConsoleCapture("Read permission denied.");
+
 			// The formats are advertised, and a denied read is told apart from empty content
 			// by the exception it surfaces.
 			var view = Clipboard.GetContent();
