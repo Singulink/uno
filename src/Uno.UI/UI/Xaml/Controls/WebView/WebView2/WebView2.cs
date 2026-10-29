@@ -17,8 +17,7 @@ namespace Microsoft.UI.Xaml.Controls;
 #endif
 public partial class WebView2 : Control, IWebView
 {
-	// The messages WinUI uses for the same cases.
-	internal const string ClosedMessage = "Cannot create CoreWebView2 for Closed WebView2 element.";
+	// The message WinUI uses when a member needs a CoreWebView2 that isn't there.
 	private const string NoCoreWebView2Message =
 		"Failed because a valid CoreWebView2 is not present. Make sure one was created, for example by calling EnsureCoreWebView2Async() API.";
 
@@ -57,7 +56,18 @@ public partial class WebView2 : Control, IWebView
 
 	CoreDispatcher IWebView.Dispatcher => Dispatcher;
 
-	protected override void OnApplyTemplate() => _coreWebView2?.OnOwnerApplyTemplate();
+	protected override void OnApplyTemplate()
+	{
+		_coreWebView2?.OnOwnerApplyTemplate();
+
+#if __SKIA__
+		// A template applied to a loaded WebView2, as when it's retemplated, gets no Loaded to register its native WebView.
+		if (IsLoaded)
+		{
+			_coreWebView2?.OnLoaded();
+		}
+#endif
+	}
 
 	private void WebView2_Loaded(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
 	{
@@ -84,7 +94,7 @@ public partial class WebView2 : Control, IWebView
 	public IAsyncAction EnsureCoreWebView2Async() =>
 		AsyncAction.FromTask(async ct =>
 		{
-			var coreWebView2 = _coreWebView2 ?? throw new ObjectDisposedException(nameof(WebView2), ClosedMessage);
+			var coreWebView2 = _coreWebView2 ?? throw CoreWebView2.CreateClosedException();
 
 			if (!_coreWebView2Initialized)
 			{
@@ -100,8 +110,10 @@ public partial class WebView2 : Control, IWebView
 			await coreWebView2.EnsureNativeWebViewAsync();
 		});
 
+	// As in WinUI, a missing CoreWebView2 fails the operation rather than the call.
 	public IAsyncOperation<string?> ExecuteScriptAsync(string javascriptCode) =>
-		GetCoreWebView2OrThrow(nameof(ExecuteScriptAsync)).ExecuteScriptAsync(javascriptCode);
+		_coreWebView2?.ExecuteScriptAsync(javascriptCode)
+			?? AsyncOperation.FromTask<string?>(_ => Task.FromException<string?>(CreateNoCoreWebView2Exception(nameof(ExecuteScriptAsync))));
 
 	public void Reload() => GetCoreWebView2OrThrow(nameof(Reload)).Reload();
 
@@ -115,6 +127,10 @@ public partial class WebView2 : Control, IWebView
 	/// <summary>
 	/// Closes the WebView2 and releases its browser. Afterwards, <see cref="CoreWebView2"/> is null and the control can't navigate.
 	/// </summary>
+	/// <remarks>
+	/// Targets whose web view can't release its browser yet report this method as not implemented once the web view exists,
+	/// and the control keeps working.
+	/// </remarks>
 	public void Close()
 	{
 		if (_coreWebView2 is not { } coreWebView2)
@@ -122,7 +138,7 @@ public partial class WebView2 : Control, IWebView
 			return;
 		}
 
-		if (!coreWebView2.TryClose())
+		if (!coreWebView2.CanClose)
 		{
 			// This platform's native WebView can't release its browser yet.
 			global::Windows.Foundation.Metadata.ApiInformation.TryRaiseNotImplemented("Microsoft.UI.Xaml.Controls.WebView2", "Close()");
@@ -137,14 +153,18 @@ public partial class WebView2 : Control, IWebView
 		_coreWebView2 = null;
 
 		(CanGoBack, CanGoForward) = (false, false);
+
+		// Release the browser last, so the control is closed even if releasing it fails.
+		coreWebView2.Close();
 	}
 #endif
 
 	private void NavigateFromSource(string targetUrl) =>
-		(_coreWebView2 ?? throw new ObjectDisposedException(nameof(WebView2), ClosedMessage)).Navigate(targetUrl);
+		(_coreWebView2 ?? throw CoreWebView2.CreateClosedException()).Navigate(targetUrl);
 
-	private CoreWebView2 GetCoreWebView2OrThrow(string memberName) =>
-		_coreWebView2 ?? throw new InvalidOperationException($"{memberName}(): {NoCoreWebView2Message}");
+	private CoreWebView2 GetCoreWebView2OrThrow(string memberName) => _coreWebView2 ?? throw CreateNoCoreWebView2Exception(memberName);
+
+	private static InvalidOperationException CreateNoCoreWebView2Exception(string memberName) => new($"{memberName}(): {NoCoreWebView2Message}");
 
 	private void EnsureCoreWebView2()
 	{
