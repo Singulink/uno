@@ -4,7 +4,7 @@ Our apps run on a custom build of Uno Platform 6.8. It contains fixes they need 
 
 - **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
 - **Branch:** `custom/6.8`
-- **Based on:** `Uno.Sdk` `6.8.0-dev.66`, that is the official Uno.WinUI `6.8.0-dev.222`, which is commit `324a97b766` on Uno's `servicing/6.8` branch
+- **Based on:** Uno's `servicing/6.8` branch, merged in up to `d771be6f21`. The apps restore `Uno.Sdk` `6.8.0-dev.66`, that is the official Uno.WinUI `6.8.0-dev.222` (commit `324a97b766` on that branch), and the custom build replaces that version's files.
 - **Publish script:** [`build/Publish-NuGetCacheOverride.ps1`](Publish-NuGetCacheOverride.ps1)
 
 ## How apps pick up the custom build
@@ -158,10 +158,12 @@ The script rebuilds the whole set from one commit and verifies the result, so mi
 - **Trying a change before it's merged:** commit it on your branch, then publish that branch with `-Ref`, for example `-Ref my-fix-branch`. The script only builds commits, so uncommitted changes need a commit first; a temporary one is fine. Publish `custom/6.8` again when you're done, so your cache matches everyone else's.
 - **Faster development builds:** to build and test inside the Uno repository itself, Uno's [building documentation](https://platform.uno/docs/articles/uno-development/building-uno-ui.html#building-unoui-for-a-single-target-platform) describes `src\crosstargeting_override.props`, which limits builds to one target framework. That file only affects your clone. The publish script ignores it because it builds in its own worktree.
 - **When the apps move to another Uno version:** see [Catching up to a new Uno release](#catching-up-to-a-new-uno-release).
-- **What the custom build contains:** see the branch's history on top of the official build it's based on. The commit subjects say what each fix does, and "(port)" marks backports of upstream changes. A few of those ports have since been released by Uno too, and are listed anyway.
+- **What the custom build contains:** Uno's `servicing/6.8` branch, merged in, plus our own commits. The commit subjects say what each fix does, and "(port)" marks backports of upstream changes. A few of those ports have since been released by Uno too, and are listed anyway. Your clone's `origin` is the fork, which has no `servicing/6.8`, so add Uno's repository as `upstream` once, then list our own commits:
 
   ```powershell
-  git -C C:\src\uno log --no-merges --oneline 324a97b766..custom/6.8
+  git -C C:\src\uno remote add upstream https://github.com/unoplatform/uno.git
+  git -C C:\src\uno fetch upstream servicing/6.8
+  git -C C:\src\uno log --no-merges --oneline upstream/servicing/6.8..custom/6.8
   ```
 
   As of October 2026, it includes:
@@ -171,6 +173,15 @@ The script rebuilds the whole set from one commit and verifies the result, so mi
   - Image memory release and cancellation.
   - Long-press and context flyouts, tooltips, RadioButton groups and popup dismissal.
   - The publish tooling.
+- **Taking Uno's later 6.8 fixes:** Uno keeps backporting fixes to `servicing/6.8`. To take them, merge that branch again, after checking which of the incoming pull requests `custom/6.8` already ported. Those usually merge as the same change; where they conflict, one side usually has a later revision of the fix, so keep that one and check the result against both. As with a new release, merge rather than rebase.
+
+  ```powershell
+  git -C C:\src\uno fetch upstream servicing/6.8
+  git -C C:\src\uno log --oneline --first-parent custom/6.8..upstream/servicing/6.8
+  git -C C:\src\uno merge upstream/servicing/6.8
+  ```
+
+  Then update the "Based on" line at the top of this guide, and publish again.
 
 ## Catching up to a new Uno release
 
