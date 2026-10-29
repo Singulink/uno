@@ -148,11 +148,6 @@ namespace Microsoft.UI.Xaml
 			}
 		}
 
-		internal global::Windows.Foundation.Point GetPosition(Point position, global::Microsoft.UI.Xaml.UIElement relativeTo)
-		{
-			return ConvertPointToCoordinateSpace(position, relativeTo);
-		}
-
 		/// <summary>
 		/// Note: Offsets are only an approximation which does not take in consideration possible transformations
 		///	applied by a 'UIView' between this element and its parent UIElement.
