@@ -120,41 +120,44 @@ namespace Uno.UI.Tests.Windows_UI_Input
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void Tapped_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		public void Tapped_Delta_Raw(bool measuresTapRangeInWindow)
 		{
-			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeInWindow = measuresTapRangeInWindow };
 			var taps = new List<TappedEventArgs>();
 			sut.Tapped += (snd, e) => taps.Add(e);
 
 			sut.ProcessDownEvent(25, 25);
 			sut.ProcessUpEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25));
 
-			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+			taps.Should().HaveCount(measuresTapRangeInWindow ? 0 : 1);
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void Tapped_Element_Moved_Under_Pointer(bool measuresTapRangeOnRawPosition)
+		public void Tapped_Element_Moved_Under_Pointer(bool measuresTapRangeInWindow)
 		{
-			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeInWindow = measuresTapRangeInWindow };
 			var taps = new List<TappedEventArgs>();
 			sut.Tapped += (snd, e) => taps.Add(e);
 
 			sut.ProcessDownEvent(25, 25);
-			sut.ProcessUpEvent(GetPoint(25, 25).At(rawPosition: new Point(25, 25), position: new Point(25 + GestureRecognizer.TapMaxXDelta + 1, 25)));
+			sut.ProcessUpEvent(GetPoint(25, 25).At(new Point(25 + GestureRecognizer.TapMaxXDelta + 1, 25)));
 
-			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 1 : 0);
+			taps.Should().HaveCount(measuresTapRangeInWindow ? 1 : 0);
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void Tapped_Delta_Raw_Back_Over(bool measuresTapRangeOnRawPosition)
+		public void Tapped_Delta_Raw_Back_Over(bool measuresTapRangeInWindow)
 		{
-			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeInWindow = measuresTapRangeInWindow };
 			var taps = new List<TappedEventArgs>();
 			sut.Tapped += (snd, e) => taps.Add(e);
 
@@ -162,18 +165,19 @@ namespace Uno.UI.Tests.Windows_UI_Input
 			sut.ProcessMoveEvent(GetPointMovedWithElement(25, 25 + GestureRecognizer.TapMaxYDelta + 1));
 			sut.ProcessUpEvent(25, 25); // Release over
 
-			taps.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+			taps.Should().HaveCount(measuresTapRangeInWindow ? 0 : 1);
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void DoubleTapped_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		public void DoubleTapped_Delta_Raw(bool measuresTapRangeInWindow)
 		{
 			var sut = new GestureRecognizer
 			{
 				GestureSettings = GestureSettings.Tap | GestureSettings.DoubleTap,
-				MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition
+				MeasuresTapRangeInWindow = measuresTapRangeInWindow
 			};
 			var taps = new List<TappedEventArgs>();
 			sut.Tapped += (snd, e) => taps.Add(e);
@@ -182,15 +186,16 @@ namespace Uno.UI.Tests.Windows_UI_Input
 			sut.ProcessUpEvent(25, 25);
 			sut.ProcessDownEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25)); // Second tap too far
 
-			taps.Count(tap => tap.TapCount == 2).Should().Be(measuresTapRangeOnRawPosition ? 0 : 1);
+			taps.Count(tap => tap.TapCount == 2).Should().Be(measuresTapRangeInWindow ? 0 : 1);
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void Holding_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		public void Holding_Delta_Raw(bool measuresTapRangeInWindow)
 		{
-			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Hold, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Hold, MeasuresTapRangeInWindow = measuresTapRangeInWindow };
 			var holds = new List<HoldingEventArgs>();
 			sut.Holding += (snd, e) => holds.Add(e);
 
@@ -200,15 +205,16 @@ namespace Uno.UI.Tests.Windows_UI_Input
 			sut.ProcessMoveEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25, ts: 1));
 			sut.ProcessMoveEvent(GetPointMovedWithElement(25 + GestureRecognizer.TapMaxXDelta + 1, 25, ts: GestureRecognizer.HoldMinDelayMicroseconds + 1));
 
-			holds.Should().HaveCount(measuresTapRangeOnRawPosition ? 0 : 1);
+			holds.Should().HaveCount(measuresTapRangeInWindow ? 0 : 1);
 		}
 
 		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
 		[DataRow(false)]
 		[DataRow(true)]
-		public void Drag_Started_Mouse_Delta_Raw(bool measuresTapRangeOnRawPosition)
+		public void Drag_Started_Mouse_Delta_Raw(bool measuresTapRangeInWindow)
 		{
-			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Drag, MeasuresTapRangeOnRawPosition = measuresTapRangeOnRawPosition };
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Drag, MeasuresTapRangeInWindow = measuresTapRangeInWindow };
 			var drags = new List<DraggingEventArgs>();
 			sut.Dragging += (snd, e) => drags.Add(e);
 
@@ -217,12 +223,24 @@ namespace Uno.UI.Tests.Windows_UI_Input
 			sut.ProcessDownEvent(25, 25, ts: 0);
 			sut.ProcessMoveEvent(GetPointMovedWithElement(50, 50, ts: 1));
 
-			drags.Should().HaveCount(measuresTapRangeOnRawPosition ? 1 : 0);
+			drags.Should().HaveCount(measuresTapRangeInWindow ? 1 : 0);
 		}
 
-		// The point of a pointer which moved to the given raw position, with an element that moved along with it.
-		private static PointerPoint GetPointMovedWithElement(double rawX, double rawY, ulong? ts = null)
-			=> GetPoint(25, 25, ts: ts).At(rawPosition: new Point(rawX, rawY), position: new Point(25, 25));
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25731")]
+		public void Tapped_RawPosition_Is_The_Press()
+		{
+			var sut = new GestureRecognizer { GestureSettings = GestureSettings.Tap, MeasuresTapRangeInWindow = true };
+			var taps = new List<TappedEventArgs>();
+			sut.Tapped += (snd, e) => taps.Add(e);
+
+			sut.ProcessDownEvent(GetPoint(25, 25).At(rawPosition: new Point(125, 125), position: new Point(25, 25)));
+			sut.ProcessUpEvent(GetPoint(25, 25).At(rawPosition: new Point(130, 125), position: new Point(25, 25)));
+
+			var tap = taps.Should().ContainSingle().Subject;
+			tap.RawPosition.Should().Be(new Point(125, 125));
+			tap.Position.Should().Be(new Point(25, 25));
+		}
 
 		[TestMethod]
 #if RUNTIME_NATIVE_AOT
@@ -2248,14 +2266,32 @@ namespace Uno.UI.Tests.Windows_UI_Input
 			return new PointerPoint(frameId, ts.Value, pointer, id.Value, location, location, isInContact.GetValueOrDefault(), properties);
 		}
 
+		// The point of a pointer which moved to the given raw position, with an element that moved along with it.
+		public static PointerPoint GetPointMovedWithElement(double rawX, double rawY, ulong? ts = null)
+			=> GetPoint(25, 25, ts: ts).At(rawPosition: new Point(rawX, rawY), position: new Point(25, 25));
+
 		public static TappedEventArgs Tap(double x, double y, uint tapCount = 1, PointerDeviceType? device = null)
-			=> new TappedEventArgs(1, device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch, new Point(x, y), tapCount);
+			=> new TappedEventArgs(
+				1,
+				device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch,
+				new Point(x, y),
+				new Point(x, y),
+				tapCount);
 
 		public static RightTappedEventArgs RightTap(double x, double y, PointerDeviceType? device = null)
-			=> new RightTappedEventArgs(1, device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch, new Point(x, y));
+			=> new RightTappedEventArgs(
+				1,
+				device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch,
+				new Point(x, y),
+				new Point(x, y));
 
 		public static HoldingEventArgs Hold(double x, double y, HoldingState state, PointerDeviceType? device = null, uint? ptId = null)
-			=> new HoldingEventArgs(ptId ?? 1, device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch, new Point(x, y), state);
+			=> new HoldingEventArgs(
+				ptId ?? 1,
+				device ?? _currentPointer.Value.device?.PointerDeviceType ?? PointerDeviceType.Touch,
+				new Point(x, y),
+				new Point(x, y),
+				state);
 
 		public static DraggingEventArgs Drag(PointerPoint point, DraggingState state)
 			=> new DraggingEventArgs(point, state, 1);

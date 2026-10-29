@@ -72,7 +72,7 @@ namespace Windows.UI.Input
 		public GestureRecognizerSuspiciousCases PatchCases { get; set; } = WinRTFeatureConfiguration.GestureRecognizer._defaultPatchSuspiciousCases;
 
 		/// <summary>
-		/// Measures the tap range (of the tap, double-tap, hold and drag) on the <see cref="PointerPoint.RawPosition"/>
+		/// Measures the tap, double-tap, hold and drag-start ranges on the <see cref="PointerPoint.RawPosition"/>
 		/// instead of the <see cref="PointerPoint.Position"/>.
 		/// </summary>
 		/// <remarks>
@@ -80,10 +80,7 @@ namespace Windows.UI.Input
 		/// (e.g. content scrolled through manipulation events), while the raw position is relative to the window.
 		/// On WinUI, the recognizer of an element gets positions relative to the root.
 		/// </remarks>
-		internal bool MeasuresTapRangeOnRawPosition { get; init; }
-
-		private Point GetTapRangePosition(PointerPoint point)
-			=> MeasuresTapRangeOnRawPosition ? point.RawPosition : point.Position;
+		internal bool MeasuresTapRangeInWindow { get; init; }
 
 		internal bool IsDragging => _manipulation?.IsDragManipulation ?? false;
 
@@ -265,7 +262,19 @@ namespace Windows.UI.Input
 		public event TypedEventHandler<GestureRecognizer, HoldingEventArgs> Holding;
 
 		public bool CanBeDoubleTap(PointerPoint value)
-			=> _gestureSettings.HasFlag(GestureSettings.DoubleTap) && Gesture.IsMultiTapGesture(this, value);
+			=> _gestureSettings.HasFlag(GestureSettings.DoubleTap) && IsMultiTapGesture(value);
+
+		private bool IsMultiTapGesture(PointerPoint down)
+		{
+			if (_lastSingleTap.ts == 0) // i.e. no previous tap to compare with
+			{
+				return false;
+			}
+
+			return _lastSingleTap.id == GetPointerIdentifier(down)
+				&& down.Timestamp - _lastSingleTap.ts <= MultiTapMaxDelayMicroseconds
+				&& !IsOutOfTapRange(_lastSingleTap.position, GetTapRangePosition(down));
+		}
 		#endregion
 
 		#region Dragging
@@ -281,6 +290,9 @@ namespace Windows.UI.Input
 		private static readonly CheckButton LeftButton = (PointerPoint point) => point.Properties.IsLeftButtonPressed;
 		private static readonly CheckButton RightButton = (PointerPoint point) => point.Properties.IsRightButtonPressed;
 		private static readonly CheckButton BarrelButton = (PointerPoint point) => point.Properties.IsBarrelButtonPressed;
+
+		private Point GetTapRangePosition(PointerPoint point)
+			=> MeasuresTapRangeInWindow ? point.RawPosition : point.Position;
 
 		private static ulong GetPointerIdentifier(PointerPoint point)
 		{

@@ -405,11 +405,11 @@ namespace Microsoft.UI.Xaml
 
 			if (args.TapCount == 1)
 			{
-				that.SafeRaiseEvent(TappedEvent, new TappedRoutedEventArgs(src, args, that));
+				that.SafeRaiseEvent(TappedEvent, new TappedRoutedEventArgs(src, args));
 			}
 			else // i.e. args.TapCount == 2
 			{
-				that.SafeRaiseEvent(DoubleTappedEvent, new DoubleTappedRoutedEventArgs(src, args, that));
+				that.SafeRaiseEvent(DoubleTappedEvent, new DoubleTappedRoutedEventArgs(src, args));
 			}
 		};
 
@@ -418,7 +418,7 @@ namespace Microsoft.UI.Xaml
 			var that = (UIElement)sender.Owner;
 			var src = PointerRoutedEventArgs.LastPointerEvent?.OriginalSource as UIElement ?? that;
 
-			var rightTappedArgs = new RightTappedRoutedEventArgs(src, args, that);
+			var rightTappedArgs = new RightTappedRoutedEventArgs(src, args);
 			that.SafeRaiseEvent(RightTappedEvent, rightTappedArgs);
 
 			// After RightTapped, if not handled, invoke OnRightTappedUnhandled on each Control in the tree.
@@ -450,13 +450,10 @@ namespace Microsoft.UI.Xaml
 				var contentRoot = VisualTree.GetContentRootForElement(src);
 				if (contentRoot != null)
 				{
-					// Convert element-relative position to global (app window) coordinates.
-					// args.Position is relative to 'that' (the element with the GestureRecognizer),
-					// but ContextRequestedEventArgs.TryGetPosition expects global coordinates.
-					var globalPosition = that.TransformToVisual(null).TransformPoint(args.Position);
+					// ContextRequestedEventArgs.TryGetPosition expects the position in the window, where the pointer pressed.
 					contentRoot.InputManager.ContextMenuProcessor.RaiseContextRequestedEvent(
 						src,
-						globalPosition,
+						args.RawPosition,
 						isTouchInput: false);
 				}
 			}
@@ -467,7 +464,7 @@ namespace Microsoft.UI.Xaml
 			var that = (UIElement)sender.Owner;
 			var src = PointerRoutedEventArgs.LastPointerEvent?.OriginalSource as UIElement ?? that;
 
-			that.SafeRaiseEvent(HoldingEvent, new HoldingRoutedEventArgs(src, args, that));
+			that.SafeRaiseEvent(HoldingEvent, new HoldingRoutedEventArgs(src, args));
 
 			// Handle ContextRequested/ContextCanceled for touch input.
 			// This matches WinUI behavior where touch-and-hold triggers context menu.
@@ -478,11 +475,8 @@ namespace Microsoft.UI.Xaml
 				{
 					if (args.HoldingState == HoldingState.Started)
 					{
-						// Convert element-relative position to global (app window) coordinates.
-						// args.Position is relative to 'that' (the element with the GestureRecognizer),
-						// but ContextRequestedEventArgs.TryGetPosition expects global coordinates.
-						var globalPosition = that.TransformToVisual(null).TransformPoint(args.Position);
-						contentRoot.InputManager.ContextMenuProcessor.SetContextMenuOnHoldingTouchPoint(globalPosition);
+						// ContextRequestedEventArgs.TryGetPosition expects the position in the window, where the pointer pressed.
+						contentRoot.InputManager.ContextMenuProcessor.SetContextMenuOnHoldingTouchPoint(args.RawPosition);
 						contentRoot.InputManager.ContextMenuProcessor.ProcessContextRequestOnHoldingGesture(src);
 					}
 					else if (args.HoldingState == HoldingState.Canceled)
@@ -530,7 +524,7 @@ namespace Microsoft.UI.Xaml
 			var recognizer = new GestureRecognizer(this)
 			{
 				PatchCases = WinRTFeatureConfiguration.GestureRecognizer.PatchCasesForUiElement,
-				MeasuresTapRangeOnRawPosition = true
+				MeasuresTapRangeInWindow = true
 			};
 
 			// Allow partial parts to subscribe to pointer events (WASM)

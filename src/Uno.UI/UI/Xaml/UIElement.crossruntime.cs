@@ -127,9 +127,6 @@ namespace Microsoft.UI.Xaml
 		}
 #endif
 
-		internal Point GetPosition(Point position, UIElement relativeTo)
-			=> TransformToVisual(relativeTo).TransformPoint(position);
-
 #if UNO_HAS_ENHANCED_LIFECYCLE
 		private void ChildEnter(UIElement child, EnterParams @params)
 		{
