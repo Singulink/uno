@@ -234,35 +234,61 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 
 		[TestMethod]
 		[RequiresFullWindow]
-		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.Native)]
+		[PlatformCondition(ConditionMode.Exclude, RuntimeTestPlatforms.NativeWinUI)]
 		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25716")]
-		[DataRow(0, DisplayName = "Run")]
-		[DataRow(1, DisplayName = "Run in a Span")]
-		[DataRow(2, DisplayName = "Run in nested Spans")]
-		public async Task When_Run_Foreground_ThemeResource_And_Application_Theme_Toggled(int spanDepth)
+		// No RichTextBlock rows on 6.8: its RichTextBlock does not display its blocks.
+		[DataRow(false, 0, ThemedTextElement.Run, DisplayName = "TextBlock, Run")]
+		[DataRow(false, 1, ThemedTextElement.Run, DisplayName = "TextBlock, Run in a Span")]
+		[DataRow(false, 2, ThemedTextElement.Run, DisplayName = "TextBlock, Run in nested Spans")]
+		[DataRow(false, 0, ThemedTextElement.Hyperlink, DisplayName = "TextBlock, default Hyperlink color")]
+		[DataRow(false, 1, ThemedTextElement.Hyperlink, DisplayName = "TextBlock, default Hyperlink color in a Span")]
+		public async Task When_Inline_Theme_Dependent_Foreground_And_Application_Theme_Toggled(bool useRichTextBlock, int spanDepth, ThemedTextElement themedElement)
 		{
+			const string Xmlns = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+			const string ThemedForeground = "Foreground=\"{ThemeResource RunThemeTestBrush}\"";
+
 			var lightColor = Color.FromArgb(0xFF, 0x00, 0x80, 0x00);
 			var darkColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0x00);
 
+			// Overrides the default link color (HyperlinkForeground) so the Hyperlink rows can check it.
 			var appResources = new ResourceDictionary();
-			appResources.ThemeDictionaries["Light"] = new ResourceDictionary { ["RunThemeTestBrush"] = new SolidColorBrush(lightColor) };
-			appResources.ThemeDictionaries["Dark"] = new ResourceDictionary { ["RunThemeTestBrush"] = new SolidColorBrush(darkColor) };
+			appResources.ThemeDictionaries["Light"] = new ResourceDictionary
+			{
+				["RunThemeTestBrush"] = new SolidColorBrush(lightColor),
+				["HyperlinkForeground"] = new SolidColorBrush(lightColor),
+			};
+			appResources.ThemeDictionaries["Dark"] = new ResourceDictionary
+			{
+				["RunThemeTestBrush"] = new SolidColorBrush(darkColor),
+				["HyperlinkForeground"] = new SolidColorBrush(darkColor),
+			};
 			Application.Current.Resources.MergedDictionaries.Add(appResources);
 
 			try
 			{
 				using var lightApp = ThemeHelper.UseApplicationLightTheme();
 
-				var themedInline = """<Run Text="themed" Foreground="{ThemeResource RunThemeTestBrush}" />""";
+				var themedInline = themedElement switch
+				{
+					ThemedTextElement.Run => $"""<Run Text="themed" {ThemedForeground} />""",
+					ThemedTextElement.Hyperlink => """<Hyperlink><Run Text="themed" /></Hyperlink>""",
+					ThemedTextElement.Paragraph => """<Run Text="themed" />""",
+					_ => throw new ArgumentOutOfRangeException(nameof(themedElement)),
+				};
+
 				for (var i = 0; i < spanDepth; i++)
 				{
 					themedInline = $"<Span>{themedInline}</Span>";
 				}
 
-				var textBlock = (TextBlock)XamlReader.Load(
-					$"""<TextBlock xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><Run Text="Plain " />{themedInline}</TextBlock>""");
+				var paragraphForeground = themedElement == ThemedTextElement.Paragraph ? $" {ThemedForeground}" : "";
+				var inlines = $"""<Run Text="Plain " />{themedInline}""";
+				var element = (FrameworkElement)XamlReader.Load(useRichTextBlock
+					? $"""<RichTextBlock xmlns="{Xmlns}"><Paragraph{paragraphForeground}>{inlines}</Paragraph></RichTextBlock>"""
+					: $"""<TextBlock xmlns="{Xmlns}">{inlines}</TextBlock>""");
 
-				var inline = textBlock.Inlines[1];
+				var topInlines = element is RichTextBlock richTextBlock ? ((Paragraph)richTextBlock.Blocks[0]).Inlines : ((TextBlock)element).Inlines;
+				var inline = topInlines[1];
 				while (inline is Span span)
 				{
 					inline = span.Inlines[0];
@@ -270,8 +296,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 
 				var run = (Run)inline;
 
-				WindowHelper.WindowContent = textBlock;
-				await WindowHelper.WaitForLoaded(textBlock);
+				using var _ = UITestHelper.ResetWindowContent();
+				await UITestHelper.Load(element);
 				Assert.AreEqual(lightColor, ((SolidColorBrush)run.Foreground).Color, "initial Light");
 
 				// Each switch must apply the new theme's brush, not the one of the theme that is being left.
@@ -291,6 +317,14 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml
 			{
 				Application.Current.Resources.MergedDictionaries.Remove(appResources);
 			}
+		}
+
+		// The element whose theme-dependent foreground the Run shows: its own, its Hyperlink's default link color, or its Paragraph's.
+		public enum ThemedTextElement
+		{
+			Run,
+			Hyperlink,
+			Paragraph,
 		}
 #endif
 

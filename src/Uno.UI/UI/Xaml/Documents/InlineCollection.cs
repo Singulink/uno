@@ -153,7 +153,7 @@ namespace Microsoft.UI.Xaml.Documents
 		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
 #if !__WASM__
-		private List<Inline>.Enumerator GetEnumeratorFast() => _collection.GetEnumeratorFast();
+		internal List<Inline>.Enumerator GetEnumeratorFast() => _collection.GetEnumeratorFast();
 #endif
 
 		/// <inheritdoc />

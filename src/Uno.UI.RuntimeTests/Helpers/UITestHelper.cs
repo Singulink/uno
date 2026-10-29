@@ -22,6 +22,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Markup;
 using Private.Infrastructure;
 using SamplesApp.UITests;
+using Uno.Disposables;
 
 #if !HAS_UNO
 using System.Runtime.InteropServices;
@@ -55,6 +56,12 @@ public static class UITestHelper
 
 		return element.GetAbsoluteBounds();
 	}
+
+	/// <summary>
+	/// Clears the test area when disposed, so a test does not leak its content into the next one.
+	/// </summary>
+	public static IDisposable ResetWindowContent()
+		=> Disposable.Create(() => TestServices.WindowHelper.WindowContent = null);
 
 	public static async Task WaitForLoaded<T>(T element, Func<T, bool>? isLoaded = null) where T : FrameworkElement
 	{

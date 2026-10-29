@@ -801,15 +801,16 @@ public partial class DependencyObjectStore
 	}
 
 	/// <summary>
-	/// Propagates a resource update to a child that is not stored as a property value (e.g. TextBlock inlines),
-	/// and to the inlines nested in it when it is a <see cref="Documents.Span"/>.
+	/// Propagates a resource update to a child that is not stored as a property value
+	/// (e.g. TextBlock inlines or RichTextBlock blocks), and to the inlines nested in it
+	/// when it is a <see cref="Documents.Span"/> or a <see cref="Documents.Paragraph"/>.
 	/// </summary>
 	/// <remarks>
 	/// During a theme walk the child joins the walk, as WinUI's property walk notifies it (Theming.cpp:218-221).
 	/// Resolving it against <paramref name="resourceContextProvider"/> instead would use that element's
 	/// per-object theme, which is only persisted once its walk completes.
-	/// The inlines of a Span are not stored as a property value either, while WinUI's property walk reaches
-	/// them through Span_Inlines, so they follow their Span.
+	/// The inlines of a Span or Paragraph aren't a property value either (WinUI reaches them through Span_Inlines
+	/// and Paragraph_Inlines), so they get the same update.
 	/// </remarks>
 	internal void UpdateChildThemeBindings(DependencyObject child, ResourceUpdateReason updateReason, FrameworkElement resourceContextProvider)
 	{
@@ -828,11 +829,19 @@ public partial class DependencyObjectStore
 		childStore.UpdateResourceBindings(updateReason, resourceContextProvider);
 #endif
 
-		if (child is Documents.Span span)
+		var inlines = child switch
 		{
-			foreach (var inline in span.Inlines)
+			Documents.Span span => span.Inlines,
+			Documents.Paragraph paragraph => paragraph.Inlines,
+			_ => null,
+		};
+
+		if (inlines is not null)
+		{
+			var enumerator = inlines.GetEnumeratorFast();
+			while (enumerator.MoveNext())
 			{
-				UpdateChildThemeBindings(inline, updateReason, resourceContextProvider);
+				UpdateChildThemeBindings(enumerator.Current, updateReason, resourceContextProvider);
 			}
 		}
 	}

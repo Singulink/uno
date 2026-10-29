@@ -237,7 +237,17 @@ namespace Microsoft.UI.Xaml.Documents
 			// element's effective theme, preferring the Hyperlink* keys with the SystemControl*
 			// fallbacks, and apply at Animations precedence (SetAnimatedValue).
 			var core = Uno.UI.Xaml.Core.CoreServices.Instance;
+
+#if UNO_HAS_ENHANCED_LIFECYCLE
+			// During a theme walk, resolve in the theme being applied, as CHyperlink::NotifyThemeChangedCore does
+			// (Hyperlink.cpp:712-715): the containing element only persists its theme once its walk completes.
+			var store = ((IDependencyObjectStoreProvider)this).Store;
+			var ownerTheme = store.IsProcessingThemeWalk
+				? store.WalkTheme
+				: ThemeResolution.ResolveOwnerTheme(GetContainingFrameworkElement());
+#else
 			var ownerTheme = ThemeResolution.ResolveOwnerTheme(GetContainingFrameworkElement());
+#endif
 
 			if (_pressedPointer is { })
 			{
