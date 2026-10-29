@@ -246,7 +246,8 @@ namespace Windows.ApplicationModel.DataTransfer
 			{
 				if (typeof(Clipboard).Log().IsEnabled(LogLevel.Warning))
 				{
-					typeof(Clipboard).Log().Warn($"Custom format '{formatId}' is the MIME type of a standard format and was skipped; use the standard format instead.");
+					typeof(Clipboard).Log().Warn(
+						$"Custom format '{formatId}' is the MIME type of a standard format and was skipped; use the standard format instead.");
 				}
 				return false;
 			}
@@ -345,11 +346,19 @@ namespace Windows.ApplicationModel.DataTransfer
 				package.SetStorageItems(data.Files.Select(info => CreateStorageFile(info, lease)));
 			}
 
-			if (data.Image is { } image)
+			if (GetBitmapSource(data) is { } image)
 			{
 				package.SetBitmap(RandomAccessStreamReference.CreateFromFile(CreateStorageFile(image, lease)));
 			}
 		}
+
+		// What the Bitmap format is read from: this application's own image, a PNG the browser read, or the single raster
+		// image file of a paste. Copied image data, such as a screenshot, is pasted as one; multi-file pastes are file
+		// transfers and are offered as storage items alone, as they would be on Windows.
+		private static NativeStorageItemInfo? GetBitmapSource(ClipboardContentData data)
+			=> data.Image ?? (data.Files.Length == 1 && data.FileTypes.Length == 1 && RasterImageTypes.Contains(data.FileTypes[0])
+				? data.Files[0]
+				: null);
 
 		// The content is not known yet; all providers of this view share a single clipboard read.
 		private static void AddPendingContent(DataPackage package, double pasteShortcutTime, bool includeStorageItems)
@@ -366,14 +375,11 @@ namespace Windows.ApplicationModel.DataTransfer
 
 			package.SetDataProvider(StandardDataFormats.Bitmap, async ct =>
 			{
-				var data = await content.Value;
-				if (data.Image is null)
-				{
-					throw new InvalidOperationException("The clipboard does not contain an image.");
-				}
+				var image = GetBitmapSource(await content.Value)
+					?? throw new InvalidOperationException("The clipboard does not contain an image.");
 
 				// The image is registered as a native file handle on the JS side and streamed on demand.
-				return RandomAccessStreamReference.CreateFromFile(CreateStorageFile(data.Image, lease));
+				return RandomAccessStreamReference.CreateFromFile(CreateStorageFile(image, lease));
 			});
 
 			if (includeStorageItems)

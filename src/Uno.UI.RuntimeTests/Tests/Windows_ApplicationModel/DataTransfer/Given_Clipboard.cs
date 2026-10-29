@@ -420,6 +420,32 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Paste_Event_With_Svg_File()
+	{
+#if HAS_UNO
+		// The Bitmap format is a raster image: a single SVG file is pasted as a file only.
+		DispatchSyntheticPaste(
+			"""
+			const dt = new DataTransfer();
+			dt.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'drawing.svg', { type: 'image/svg+xml' }));
+			""");
+
+		var view = Clipboard.GetContent();
+
+		Assert.IsFalse(view.Contains(StandardDataFormats.Bitmap));
+		Assert.IsTrue(view.Contains(StandardDataFormats.StorageItems));
+
+		var items = await view.GetStorageItemsAsync();
+		Assert.AreEqual("drawing.svg", items.Single().Name);
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
 	public async Task When_SetContent_After_Paste()
 	{
 #if HAS_UNO
@@ -551,12 +577,11 @@ partial class Given_Clipboard
 		Clipboard.SetContent(package);
 
 		await WaitForClipboardAsync(() => Clipboard.GetContent().Contains(StandardDataFormats.Text));
-		Assert.IsFalse(Clipboard.GetContent().Contains(StandardDataFormats.Html));
 
-		// A paste would show the text written; one showing nothing means the clipboard changed, so
-		// the state is unknown (which advertises HTML optimistically).
+		// A paste would show the text written; one showing nothing means the clipboard changed and the
+		// text is no longer there.
 		DispatchSyntheticPaste("const dt = new DataTransfer();");
-		Assert.IsTrue(Clipboard.GetContent().Contains(StandardDataFormats.Html));
+		Assert.IsFalse(Clipboard.GetContent().Contains(StandardDataFormats.Text));
 
 		// The same goes for what an earlier paste showed.
 		DispatchSyntheticPaste(
@@ -564,10 +589,83 @@ partial class Given_Clipboard
 			const dt = new DataTransfer();
 			dt.items.add('pasted-content', 'text/plain');
 			""");
-		Assert.IsFalse(Clipboard.GetContent().Contains(StandardDataFormats.Html));
+		Assert.IsTrue(Clipboard.GetContent().Contains(StandardDataFormats.Text));
 
 		DispatchSyntheticPaste("const dt = new DataTransfer();");
-		Assert.IsTrue(Clipboard.GetContent().Contains(StandardDataFormats.Html));
+		Assert.IsFalse(Clipboard.GetContent().Contains(StandardDataFormats.Text));
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Empty_Paste_Without_Shortcut()
+	{
+#if HAS_UNO
+		InstallDeniedClipboardRead();
+		try
+		{
+			// A paste gesture with no shortcut before it, like a context menu's Paste. Browsers show a paste
+			// the standard formats whenever the clipboard holds them, so one showing nothing says the clipboard
+			// holds none of them: they are reported absent, without a permission-gated read.
+			// An in-page copy first leaves the clipboard unknown, so only the paste can tell.
+			InvokeJs("document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true })); return 'ok';");
+			DispatchSyntheticPaste("const dt = new DataTransfer();");
+
+			var view = Clipboard.GetContent();
+			Assert.IsFalse(view.Contains(StandardDataFormats.Text));
+			Assert.IsFalse(view.Contains(StandardDataFormats.Html));
+			Assert.IsFalse(view.Contains(StandardDataFormats.Bitmap));
+			Assert.IsFalse(view.Contains(StandardDataFormats.StorageItems));
+			Assert.AreEqual(0, GetClipboardReadCount());
+		}
+		finally
+		{
+			RemoveDeniedClipboardRead();
+		}
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Clipboard_Read_Returns_Non_Raster_Image()
+	{
+#if HAS_UNO
+		InvokeJs(
+			$$"""
+			const item = (type, blob) => ({ types: [type], getType: () => Promise.resolve(blob) });
+			window.__unoSvgItem = item('image/svg+xml', new Blob(['<svg xmlns="http://www.w3.org/2000/svg"/>'], { type: 'image/svg+xml' }));
+			const png = Uint8Array.from(atob('{{TestPngBase64}}'), c => c.charCodeAt(0));
+			window.__unoPngItem = item('image/png', new Blob([png], { type: 'image/png' }));
+			// An in-page copy leaves the content unknown, so the reads go to the browser.
+			document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true }));
+			return 'ok';
+			""");
+		try
+		{
+			// Chromium reads an SVG on the clipboard as image/svg+xml, which is not a raster image.
+			InvokeJs("navigator.clipboard.read = () => Promise.resolve([window.__unoSvgItem]); return 'ok';");
+			var view = Clipboard.GetContent();
+			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetBitmapAsync());
+			Assert.IsNotInstanceOfType<UnauthorizedAccessException>(exception.InnerException);
+
+			// A PNG is the Bitmap.
+			InvokeJs("navigator.clipboard.read = () => Promise.resolve([window.__unoPngItem]); return 'ok';");
+			var reference = await Clipboard.GetContent().GetBitmapAsync();
+			using var stream = await reference.OpenReadAsync();
+			CollectionAssert.AreEqual(Convert.FromBase64String(TestPngBase64), await ToBytesAsync(stream));
+		}
+		finally
+		{
+			InvokeJs("delete navigator.clipboard.read; delete window.__unoSvgItem; delete window.__unoPngItem; return 'ok';");
+		}
 #else
 		await Task.CompletedTask;
 #endif
@@ -736,6 +834,60 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Clipboard_Api_Is_Unavailable()
+	{
+#if HAS_UNO
+		// Outside a secure context there is no navigator.clipboard, and writes fall back to the copy command, which
+		// writes what a copy event handler hands it. The command needs a user gesture, so it is stood in for here by
+		// raising the copy event as the browser does and recording what the handler wrote.
+		InvokeJs(
+			"""
+			Object.defineProperty(navigator, 'clipboard', { get: () => undefined, configurable: true });
+			window.__unoCommandCopies = [];
+			window.__unoExecCommand = document.execCommand;
+			document.execCommand = command => {
+				const dt = new DataTransfer();
+				const event = new ClipboardEvent(command, { clipboardData: dt, bubbles: true, cancelable: true });
+				document.dispatchEvent(event);
+				const written = event.defaultPrevented && dt.types.includes('text/plain');
+				window.__unoCommandCopies.push(written ? 'text:' + dt.getData('text/plain') : 'selection');
+				return true;
+			};
+			return 'ok';
+			""");
+		try
+		{
+			var package = new DataPackage();
+			package.SetText(TestString);
+			Clipboard.SetContent(package);
+			await WaitForClipboardAsync(() => GetCommandCopies().Length == 1);
+
+			// Clear writes empty text the same way, since browsers cannot empty the clipboard.
+			Clipboard.Clear();
+			await WaitForClipboardAsync(() => GetCommandCopies().Length == 2);
+
+			CollectionAssert.AreEqual(new[] { "text:" + TestString, "text:" }, GetCommandCopies());
+		}
+		finally
+		{
+			InvokeJs(
+				"""
+				delete navigator.clipboard;
+				document.execCommand = window.__unoExecCommand;
+				delete window.__unoExecCommand;
+				delete window.__unoCommandCopies;
+				return 'ok';
+				""");
+		}
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
 	public async Task When_SetContent_Write_Is_Issued_Before_Data_Is_Ready()
 	{
 #if HAS_UNO
@@ -841,11 +993,138 @@ partial class Given_Clipboard
 	[TestMethod]
 	[RunsOnUIThread]
 	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Paste_Shortcut_Gets_Empty_Paste()
+	{
+#if HAS_UNO
+		var package = new DataPackage();
+		package.SetText(TestString);
+		Clipboard.SetContent(package);
+		await WaitForClipboardAsync(() => Clipboard.GetContent().Contains(StandardDataFormats.Text));
+
+		InstallDeniedClipboardRead();
+		try
+		{
+			InvokeJs("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true })); return 'ok';");
+			var waitingView = Clipboard.GetContent();
+			var laterView = Clipboard.GetContent();
+			var waitingText = waitingView.GetTextAsync().AsTask();
+
+			// The paste the shortcut announced shows nothing, so the clipboard no longer holds the text written
+			// before it. That is the answer to the shortcut, whether the read waited for the paste or started
+			// after it: nothing, without a permission-gated read.
+			DispatchSyntheticPaste("const dt = new DataTransfer();");
+
+			Assert.AreEqual("", await waitingText);
+			Assert.AreEqual("", await laterView.GetTextAsync());
+			Assert.AreEqual(0, GetClipboardReadCount());
+		}
+		finally
+		{
+			RemoveDeniedClipboardRead();
+		}
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Paste_Shortcut_Gets_Empty_Paste_Over_Own_Custom_Format()
+	{
+#if HAS_UNO
+		const string customFormat = "application/x-uno-test";
+
+		var package = new DataPackage();
+		package.SetData(customFormat, "custom-payload");
+		Clipboard.SetContent(package);
+		await WaitForClipboardAsync(() => Clipboard.GetContent().Contains(customFormat));
+
+		InstallDeniedClipboardRead();
+		try
+		{
+			InvokeJs("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true })); return 'ok';");
+			var view = Clipboard.GetContent();
+			var text = view.GetTextAsync().AsTask();
+
+			// Chromium's paste for content made only of web custom formats: a single empty text item.
+			DispatchSyntheticPaste(
+				"""
+				const dt = new DataTransfer();
+				dt.items.add('', 'text/plain');
+				""");
+
+			Assert.AreEqual("", await text);
+
+			// A paste never shows web custom formats, so the one written stays known once the shortcut is answered.
+			var after = Clipboard.GetContent();
+			Assert.IsTrue(after.Contains(customFormat));
+			Assert.AreEqual("custom-payload", await after.GetDataAsync(customFormat) as string);
+			Assert.AreEqual(0, GetClipboardReadCount());
+		}
+		finally
+		{
+			RemoveDeniedClipboardRead();
+		}
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/10032")]
+	public async Task When_Paste_Shortcut_Gets_No_Paste()
+	{
+#if HAS_UNO
+		var package = new DataPackage();
+		package.SetText(TestString);
+		Clipboard.SetContent(package);
+		await WaitForClipboardAsync(() => Clipboard.GetContent().Contains(StandardDataFormats.Text));
+
+		InstallDeniedClipboardRead();
+		try
+		{
+			// No paste event arrives (a browser that delivers none, or one too late), and nothing showed the
+			// clipboard changed since the application wrote to it: the read is answered from that content.
+			InvokeJs("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true })); return 'ok';");
+			Assert.AreEqual(TestString, await Clipboard.GetContent().GetTextAsync());
+			Assert.AreEqual(0, GetClipboardReadCount());
+
+			// Once an in-page copy leaves the content unknown, the read goes to the browser.
+			InvokeJs("document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true })); return 'ok';");
+			InvokeJs("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true })); return 'ok';");
+			var view = Clipboard.GetContent();
+			var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () => await view.GetTextAsync());
+			Assert.IsInstanceOfType<UnauthorizedAccessException>(exception.InnerException);
+			Assert.AreEqual(1, GetClipboardReadCount());
+		}
+		finally
+		{
+			RemoveDeniedClipboardRead();
+		}
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(Include, SkiaWasm)]
 	public async Task When_Bitmap_Transcoded_Without_OffscreenCanvas()
 	{
 #if HAS_UNO
 		InstallClipboardWriteRecorder();
-		InvokeJs("window.__unoOffscreenCanvas = window.OffscreenCanvas; window.OffscreenCanvas = undefined; window.createImageBitmap = undefined; return 'ok';");
+		InvokeJs(
+			"""
+			window.__unoOffscreenCanvas = window.OffscreenCanvas;
+			window.OffscreenCanvas = undefined;
+			window.createImageBitmap = undefined;
+			return 'ok';
+			""");
 		try
 		{
 			// Engines without OffscreenCanvas still get the bitmap as PNG, through a canvas element.
@@ -1154,6 +1433,29 @@ partial class Given_Clipboard
 	private static int GetNativeStorageItemCount()
 		=> int.Parse(InvokeJs("return Uno.Storage.NativeStorageItem._guidToItemMap.size.toString();"), CultureInfo.InvariantCulture);
 
+	private static string[] GetCommandCopies()
+		=> InvokeJs("return window.__unoCommandCopies.join('\\n');").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+	// Makes the browser deny every clipboard read, as it does without permission, and counts the reads.
+	private static void InstallDeniedClipboardRead()
+		=> InvokeJs(
+			"""
+			window.__unoClipboardReads = 0;
+			const denied = () => {
+				window.__unoClipboardReads++;
+				return Promise.reject(new DOMException('Read permission denied.', 'NotAllowedError'));
+			};
+			navigator.clipboard.read = denied;
+			navigator.clipboard.readText = denied;
+			return 'ok';
+			""");
+
+	private static int GetClipboardReadCount()
+		=> int.Parse(InvokeJs("return String(window.__unoClipboardReads);"), CultureInfo.InvariantCulture);
+
+	private static void RemoveDeniedClipboardRead()
+		=> InvokeJs("delete navigator.clipboard.read; delete navigator.clipboard.readText; delete window.__unoClipboardReads; return 'ok';");
+
 	// Records the system clipboard writes instead of performing them, which needs no user gesture,
 	// and slows image decoding down so a transcode is still pending when a later call lands.
 	// Records what reaches the browser clipboard, in completion order; writeDelayMs makes
@@ -1196,7 +1498,15 @@ partial class Given_Clipboard
 			""");
 
 	private static void RemoveClipboardWriteRecorder()
-		=> InvokeJs("delete navigator.clipboard.write; delete navigator.clipboard.writeText; delete window.__unoClipboardWrites; delete window.__unoClipboardWriteIssued; window.createImageBitmap = window.__unoCreateImageBitmap; return 'ok';");
+		=> InvokeJs(
+			"""
+			delete navigator.clipboard.write;
+			delete navigator.clipboard.writeText;
+			delete window.__unoClipboardWrites;
+			delete window.__unoClipboardWriteIssued;
+			window.createImageBitmap = window.__unoCreateImageBitmap;
+			return 'ok';
+			""");
 
 	// True once a ClipboardItem write has been handed to the browser, complete or not.
 	private static bool IsClipboardWriteIssued()

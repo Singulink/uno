@@ -36,6 +36,10 @@ internal sealed class ClipboardContentData
 	[JsonPropertyName("files")]
 	public NativeStorageItemInfo[] Files { get; set; } = Array.Empty<NativeStorageItemInfo>();
 
+	// The MIME type of each of the Files, in the same order.
+	[JsonPropertyName("fileTypes")]
+	public string[] FileTypes { get; set; } = Array.Empty<string>();
+
 	[JsonPropertyName("image")]
 	public NativeStorageItemInfo? Image { get; set; }
 

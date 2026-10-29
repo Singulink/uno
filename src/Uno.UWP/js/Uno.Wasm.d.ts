@@ -79,16 +79,18 @@ declare namespace Uno.Utils {
         private static invalidateKnownContent;
         private static onKeyDownCaptured;
         private static onPasteCaptured;
+        private static recordPaste;
+        private static isEmptyPaste;
         private static capturePaste;
         private static onEmptyPaste;
         private static getFreshPasteSnapshot;
-        private static getPasteImageFile;
         private static emptyContent;
         private static toManagedType;
         private static isPasteImminent;
         static getSnapshot(): string;
         static getContentAsync(pasteShortcutTime: number): Promise<string>;
         private static waitForPasteAsync;
+        private static buildContentForPaste;
         private static buildContentFromPaste;
         private static buildContentFromOwn;
         private static retainHandles;
@@ -102,6 +104,7 @@ declare namespace Uno.Utils {
         private static publishOwnContent;
         static beginWrite(generation: number, formatsJson: string): void;
         static resolveWriteAsync(generation: number, entriesJson: string, imageBytes: any, imageMimeType: string): Promise<void>;
+        private static writeTextWithCommand;
         static abortWrite(generation: number): void;
         private static supportsCustomFormat;
         private static tryTranscodeToPng;

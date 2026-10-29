@@ -185,7 +185,7 @@ namespace Uno.UI.Runtime.Skia
 			//		There is no common type for image drag and drop in browsers.
 			//		Only FireFox provides data of the kind "string" ("other" when coming from the same page) and type "application/x-moz-nativeimage",
 			//		but the content marshalling doesn't seem to work properly, and there are no equivalent custom type for chromium :(
-			//		Consequently the only way to get a "Bitmap" data in the package is by D&Ding a file with a MIME type starting by "image/"
+			//		Consequently the only way to get a "Bitmap" data in the package is by D&Ding a single raster image file (see RasterImageTypes)
 			// Note about unknown types:
 			//		we don't support any other "kind" (we can have an "other" when D&Ding an image within the same page on FF),
 			//		as we don't have any way to properly retrieve the data.
@@ -207,8 +207,9 @@ namespace Uno.UI.Runtime.Skia
 					async ct => await RetrieveFiles(ct, id, ids));
 
 				// There is no kind for image, but when we drag and drop an image from a browser to another one, we sometimes get it as a file.
-				// Only a single dragged image maps to Bitmap; multi-file drags are file transfers and expose storage items alone.
-				if (files.Count == 1 && files[0].type.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+				// Only a single dragged raster image maps to Bitmap; other files, SVG included, and multi-file drags are file
+				// transfers and expose storage items alone.
+				if (files.Count == 1 && RasterImageTypes.Contains(files[0].type))
 				{
 					var image = files[0];
 					package.SetDataProvider(

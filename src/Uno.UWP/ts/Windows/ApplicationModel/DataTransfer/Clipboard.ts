@@ -93,6 +93,8 @@ namespace Uno.Utils {
 		status: ClipboardContentStatus;
 		texts: ClipboardTextEntry[];
 		files: Uno.Storage.NativeStorageItemInfo[];
+		// The MIME type of each of the files, from which managed code tells which one is the Bitmap.
+		fileTypes: string[];
 		image: Uno.Storage.NativeStorageItemInfo;
 		// The native file registrations this content holds; released by the managed side.
 		handles: string[];
@@ -191,28 +193,39 @@ namespace Uno.Utils {
 
 				// The paste is what the clipboard holds now; an earlier own write is no longer
 				// what a read should return once the snapshot is no longer fresh.
-				Clipboard.lastPaste = snapshot;
 				Clipboard.ownContent = null;
 				Clipboard.blurredSinceKnownContent = false;
-
-				if (Clipboard.pasteWaiters.length > 0) {
-					const waiters = Clipboard.pasteWaiters.splice(0, Clipboard.pasteWaiters.length);
-					for (const waiter of waiters) {
-						waiter(snapshot);
-					}
-				}
-
-				// The snapshot is only advertised while fresh, but is retained longer so a view
-				// built for a paste shortcut can still resolve against it; the files themselves
-				// live on with the views that registered them.
-				setTimeout(() => {
-					if (Clipboard.lastPaste === snapshot) {
-						Clipboard.lastPaste = null;
-					}
-				}, Clipboard.pasteRetentionMs);
+				Clipboard.recordPaste(snapshot);
 			} catch (e) {
 				console.error(`Clipboard: failed to capture paste event: ${e}`);
 			}
+		}
+
+		// A paste, even one that showed nothing, answers the paste shortcut that announced it: the
+		// shortcut is no longer pending, and the views built for it resolve against the paste.
+		private static recordPaste(snapshot: PasteSnapshot) {
+			Clipboard.lastPaste = snapshot;
+			Clipboard.lastPasteShortcutTime = -1;
+
+			if (Clipboard.pasteWaiters.length > 0) {
+				const waiters = Clipboard.pasteWaiters.splice(0, Clipboard.pasteWaiters.length);
+				for (const waiter of waiters) {
+					waiter(snapshot);
+				}
+			}
+
+			// The snapshot is only advertised while fresh, but is retained longer so a view
+			// built for a paste shortcut can still resolve against it; the files themselves
+			// live on with the views that registered them.
+			setTimeout(() => {
+				if (Clipboard.lastPaste === snapshot) {
+					Clipboard.lastPaste = null;
+				}
+			}, Clipboard.pasteRetentionMs);
+		}
+
+		private static isEmptyPaste(snapshot: PasteSnapshot): boolean {
+			return snapshot.texts.length === 0 && snapshot.files.length === 0;
 		}
 
 		private static capturePaste(event: ClipboardEvent): PasteSnapshot {
@@ -248,8 +261,9 @@ namespace Uno.Utils {
 				}
 			}
 
-			// No usable entry does not mean an empty clipboard: representations the DataTransfer
-			// cannot carry, such as web custom formats, are invisible here (see onEmptyPaste).
+			// No usable entry means none of the standard formats, but not an empty clipboard:
+			// representations the DataTransfer cannot carry, such as web custom formats, are
+			// invisible here (see onEmptyPaste).
 			if (texts.length === 0 && files.length === 0) {
 				return null;
 			}
@@ -257,21 +271,18 @@ namespace Uno.Utils {
 			return { time: performance.now(), texts: texts, files: files };
 		}
 
-		// A paste that shows nothing proves the clipboard no longer holds what an earlier paste
-		// showed, nor own content a paste would show (text, HTML, an image). Own content made only
-		// of web custom formats, which a paste never shows, may still be there and stays known.
+		// Browsers show a paste the standard formats (text, HTML, an image) whenever the clipboard
+		// holds them, so one that shows nothing proves the clipboard holds none of them: not what
+		// an earlier paste showed, nor own content made of them. The paste is recorded, empty, and
+		// answers reads of those formats while fresh, like any paste. Own content made only of web
+		// custom formats, which a paste never shows, may still be there and stays known.
 		private static onEmptyPaste() {
-			Clipboard.lastPaste = null;
 			const own = Clipboard.ownContent;
 			if (own && (own.imageBlob || own.texts.some(t => (t.type === "text/plain" || t.type === "text/html") && !!t.value))) {
 				Clipboard.ownContent = null;
 			}
 
-			// A view built for the paste shortcut has nothing to wait for.
-			const waiters = Clipboard.pasteWaiters.splice(0, Clipboard.pasteWaiters.length);
-			for (const waiter of waiters) {
-				waiter(null);
-			}
+			Clipboard.recordPaste({ time: performance.now(), texts: [], files: [] });
 		}
 
 		private static getFreshPasteSnapshot(): PasteSnapshot {
@@ -282,17 +293,8 @@ namespace Uno.Utils {
 			return null;
 		}
 
-		// Copied image data (e.g. a screenshot) surfaces as a single synthesized image file,
-		// so only that shape maps to the Bitmap format; multi-file pastes are file transfers
-		// and surface as storage items alone, as they would on Windows.
-		private static getPasteImageFile(snapshot: PasteSnapshot): File {
-			return snapshot.files.length === 1 && snapshot.files[0].type && snapshot.files[0].type.startsWith("image/")
-				? snapshot.files[0]
-				: null;
-		}
-
 		private static emptyContent(status: ClipboardContentStatus): ClipboardContent {
-			return { status: status, texts: [], files: [], image: null, handles: [], pasteShortcutTime: -1 };
+			return { status: status, texts: [], files: [], fileTypes: [], image: null, handles: [], pasteShortcutTime: -1 };
 		}
 
 		// Web custom formats surface with a "web " prefix; managed code uses the bare id.
@@ -318,11 +320,12 @@ namespace Uno.Utils {
 				content = Clipboard.emptyContent(ClipboardContentStatus.Imminent);
 				content.pasteShortcutTime = Clipboard.lastPasteShortcutTime;
 			} else if (snapshot) {
-				content = Clipboard.buildContentFromPaste(snapshot);
+				content = Clipboard.buildContentForPaste(snapshot);
 			} else if (Clipboard.ownContent) {
 				content = Clipboard.buildContentFromOwn(Clipboard.ownContent);
 			} else {
-				content = Clipboard.emptyContent((navigator as NavigatorClipboard).clipboard ? ClipboardContentStatus.Unknown : ClipboardContentStatus.Unavailable);
+				content = Clipboard.emptyContent(
+					(navigator as NavigatorClipboard).clipboard ? ClipboardContentStatus.Unknown : ClipboardContentStatus.Unavailable);
 			}
 			return JSON.stringify(content);
 		}
@@ -345,10 +348,13 @@ namespace Uno.Utils {
 				}
 
 				if (snapshot) {
-					return JSON.stringify(Clipboard.buildContentFromPaste(snapshot));
+					return JSON.stringify(Clipboard.buildContentForPaste(snapshot));
 				}
 			}
 
+			// No paste answered the shortcut in time, or the view was not built for one. Own content is
+			// only kept while nothing showed the clipboard changed (see invalidateKnownContent), so it is
+			// still what the clipboard holds, and only unknown content needs the permission-gated read.
 			const content = Clipboard.ownContent
 				? Clipboard.buildContentFromOwn(Clipboard.ownContent)
 				: await Clipboard.readAsyncClipboard();
@@ -356,6 +362,8 @@ namespace Uno.Utils {
 			return JSON.stringify(content);
 		}
 
+		// Resolves with the paste the shortcut announced, empty if it showed nothing, or null when none
+		// arrived in time.
 		private static waitForPasteAsync(): Promise<PasteSnapshot> {
 			return new Promise<PasteSnapshot>(resolve => {
 				const waiter = (snapshot: PasteSnapshot) => resolve(snapshot);
@@ -370,17 +378,24 @@ namespace Uno.Utils {
 			});
 		}
 
+		// What a paste answers, without a permission-gated read: its content, or for a paste that showed
+		// nothing, own content still known (made only of formats a paste never shows, see onEmptyPaste),
+		// else nothing.
+		private static buildContentForPaste(snapshot: PasteSnapshot): ClipboardContent {
+			if (Clipboard.isEmptyPaste(snapshot) && Clipboard.ownContent) {
+				return Clipboard.buildContentFromOwn(Clipboard.ownContent);
+			}
+			return Clipboard.buildContentFromPaste(snapshot);
+		}
+
 		private static buildContentFromPaste(snapshot: PasteSnapshot): ClipboardContent {
 			// Registering the files as native storage items lets managed code stream them
-			// on demand instead of copying their content eagerly.
+			// on demand instead of copying their content eagerly. Managed code tells from their
+			// types whether the paste is also the Bitmap (see RasterImageTypes).
 			const content = Clipboard.emptyContent(ClipboardContentStatus.Paste);
 			content.texts = snapshot.texts;
 			content.files = Clipboard.retainHandles(snapshot.files, content);
-
-			const imageFile = Clipboard.getPasteImageFile(snapshot);
-			if (imageFile) {
-				content.image = content.files[snapshot.files.indexOf(imageFile)];
-			}
+			content.fileTypes = snapshot.files.map(file => file.type);
 
 			return content;
 		}
@@ -454,12 +469,16 @@ namespace Uno.Utils {
 						// A representation that cannot be loaded is left out rather than failing
 						// the formats that can.
 						try {
-							if (type.startsWith("image/")) {
+							if (type === "image/png") {
 								if (!content.image) {
 									const blob = await item.getType(type);
 									const file = new File([blob], "clipboard" + Clipboard.getImageExtension(type), { type: type });
 									content.image = Clipboard.retainHandles([file], content)[0];
 								}
+							} else if (type.startsWith("image/")) {
+								// The Bitmap format is a raster image, and PNG is the only raster type browsers
+								// deliver here; other image types, such as SVG in Chromium, are not a Bitmap.
+								continue;
 							} else {
 								const blob = await item.getType(type);
 								const value = await blob.text();
@@ -697,21 +716,28 @@ namespace Uno.Utils {
 				return;
 			}
 
-			await Clipboard.commitWriteAsync(generation, async () => {
-				const textarea = document.createElement("textarea");
-				textarea.value = text ? text.value : "";
-				document.body.appendChild(textarea);
-				textarea.select();
-				Clipboard.copyingWithCommand = true;
-				try {
-					if (!document.execCommand("copy")) {
-						throw new Error("The browser rejected the copy command.");
-					}
-				} finally {
-					Clipboard.copyingWithCommand = false;
-					document.body.removeChild(textarea);
+			await Clipboard.commitWriteAsync(generation, async () => Clipboard.writeTextWithCommand(text ? text.value : ""));
+		}
+
+		// Without the async clipboard API, the copy command writes what its copy event hands it, empty text
+		// included, with no selection needed. Browsers only run it during a user gesture.
+		private static writeTextWithCommand(text: string) {
+			const onCopy = (event: ClipboardEvent) => {
+				if (event.clipboardData) {
+					event.clipboardData.setData("text/plain", text);
+					event.preventDefault();
 				}
-			});
+			};
+			document.addEventListener("copy", onCopy, true);
+			Clipboard.copyingWithCommand = true;
+			try {
+				if (!document.execCommand("copy")) {
+					throw new Error("The browser rejected the copy command.");
+				}
+			} finally {
+				Clipboard.copyingWithCommand = false;
+				document.removeEventListener("copy", onCopy, true);
+			}
 		}
 
 		// The data of the write beginWrite issued could not be prepared.
@@ -795,14 +821,14 @@ namespace Uno.Utils {
 
 			Clipboard.publishOwnContent({ texts: [], imageBlob: null, imageFile: null });
 
+			// Browsers cannot truly empty the clipboard; an empty text write is the closest
+			// equivalent. The cleared state is kept for in-process reads even when the
+			// browser rejects the write (no user gesture).
 			const nav = navigator as NavigatorClipboard;
 			if (nav.clipboard) {
-				// Browsers cannot truly empty the clipboard; an empty text write is the closest
-				// equivalent. The cleared state is kept for in-process reads even when the
-				// browser rejects the write (no user gesture). Without the clipboard API there
-				// is nothing to fall back to: the copy command copies nothing from an empty
-				// selection.
 				await Clipboard.commitWriteAsync(generation, () => nav.clipboard.writeText(""));
+			} else {
+				await Clipboard.commitWriteAsync(generation, async () => Clipboard.writeTextWithCommand(""));
 			}
 		}
 
