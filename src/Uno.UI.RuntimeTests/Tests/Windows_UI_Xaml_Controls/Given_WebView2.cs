@@ -339,13 +339,13 @@ public class Given_WebView2
 			}
 		}
 
-		StartCapturingBrowserErrors();
 		try
 		{
 			await UITestHelper.Load(webView);
 			await webView.EnsureCoreWebView2Async();
 			webView.NavigationCompleted += OnNavigationCompleted;
 
+			StartCapturingSecurityErrors();
 			webView.CoreWebView2.Navigate(DataUrl);
 			await TestServices.WindowHelper.WaitFor(
 				() => completedArgs is not null,
@@ -354,12 +354,12 @@ public class Given_WebView2
 
 			Assert.IsTrue(completedArgs.IsSuccess);
 			Assert.AreEqual(new Uri(DataUrl), webView.Source);
-			Assert.IsNotNull(webView.CoreWebView2.DocumentTitle, "Reading the title of a cross-origin document should not throw.");
-			Assert.AreEqual("", StopCapturingBrowserErrors(), "The browser should not report an error for the cross-origin load.");
+			Assert.AreEqual("", webView.CoreWebView2.DocumentTitle, "The title of a cross-origin document can't be read, so it should be empty.");
+			Assert.AreEqual("", StopCapturingSecurityErrors(), "The browser should not report a SecurityError for the cross-origin load.");
 		}
 		finally
 		{
-			StopCapturingBrowserErrors();
+			StopCapturingSecurityErrors();
 			webView.NavigationCompleted -= OnNavigationCompleted;
 			TestServices.WindowHelper.WindowContent = null;
 		}
@@ -399,7 +399,6 @@ public class Given_WebView2
 			return completedSource;
 		}
 
-		StartCapturingBrowserErrors();
 		try
 		{
 			await UITestHelper.Load(webView);
@@ -407,6 +406,7 @@ public class Given_WebView2
 			webView.CoreWebView2.SetVirtualHostNameToFolderMapping("UnoNativeAssets", "WebContent", CoreWebView2HostResourceAccessKind.Allow);
 			webView.NavigationCompleted += OnNavigationCompleted;
 			var elementId = GetIframeElementId(webView);
+			StartCapturingSecurityErrors();
 
 			// Keeping the origin leaves the document readable (its scripts are off, which this test doesn't need).
 			var readableSource = await NavigateToMappedContent(elementId, "allow-same-origin");
@@ -417,25 +417,167 @@ public class Given_WebView2
 
 			Assert.AreEqual(readableSource, hiddenSource, "A hidden document should be reported with the same URL as a readable one.");
 			Assert.AreEqual(new Uri(readableSource), webView.Source);
-			Assert.AreEqual("", StopCapturingBrowserErrors(), "The browser should not report an error for the sandboxed load.");
+			Assert.AreEqual("", StopCapturingSecurityErrors(), "The browser should not report a SecurityError for the sandboxed load.");
 		}
 		finally
 		{
-			StopCapturingBrowserErrors();
+			StopCapturingSecurityErrors();
 			webView.NavigationCompleted -= OnNavigationCompleted;
 			TestServices.WindowHelper.WindowContent = null;
 		}
 	}
 
-	private static void StartCapturingBrowserErrors()
-		=> WasmSemanticDomHelper.InvokeBrowserJs(
-			"(function(){var errors=window.__unoTestErrors=[];window.__unoTestOnError=function(e){errors.push(String(e.message));};" +
-			"window.addEventListener('error',window.__unoTestOnError);return '';})()");
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25735")]
+	public async Task When_Showing_String_Then_Source_Is_Blank()
+	{
+		const string EarlierUrl = "data:text/html,earlier";
 
-	private static string StopCapturingBrowserErrors()
-		=> WasmSemanticDomHelper.InvokeBrowserJs(
-			"(function(){var handler=window.__unoTestOnError;if(!handler){return '';}window.removeEventListener('error',handler);" +
-			"var errors=window.__unoTestErrors.join('\\n');delete window.__unoTestOnError;delete window.__unoTestErrors;return errors;})()");
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		string lastSource = null;
+		void OnNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args) => lastSource = sender.CoreWebView2.Source;
+
+		// Waits for the NavigationCompleted of the navigation that NavigateToString starts, skipping the early one (#25806).
+		async Task<string> ShowString(string html)
+		{
+			ulong? startedId = null;
+			string loadedSource = null;
+			void OnStarting(WebView2 sender, CoreWebView2NavigationStartingEventArgs args) => startedId = args.NavigationId;
+			void OnCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+			{
+				if (args.NavigationId == startedId)
+				{
+					loadedSource = sender.CoreWebView2.Source;
+				}
+			}
+
+			webView.NavigationStarting += OnStarting;
+			webView.NavigationCompleted += OnCompleted;
+			try
+			{
+				webView.NavigateToString(html);
+				await TestServices.WindowHelper.WaitFor(
+					() => loadedSource is not null,
+					timeoutMS: 10000,
+					message: "NavigationCompleted should be raised when the frame loads the string.");
+
+				return loadedSource;
+			}
+			finally
+			{
+				webView.NavigationStarting -= OnStarting;
+				webView.NavigationCompleted -= OnCompleted;
+			}
+		}
+
+		try
+		{
+			await UITestHelper.Load(webView);
+			await webView.EnsureCoreWebView2Async();
+			var elementId = GetIframeElementId(webView);
+
+			// As in WinUI, a string is reported as about:blank, not as the iframe's about:srcdoc.
+			Assert.AreEqual("about:blank", await ShowString("<p>Readable</p>"), "A string should be reported as about:blank.");
+
+			// Without allow-same-origin, the frame's documents get an opaque origin, so the browser hides their location.
+			WasmSemanticDomHelper.InvokeBrowserJs(
+				$"(function(){{document.getElementById('{elementId}').setAttribute('sandbox', '');return '';}})()");
+
+			webView.NavigationCompleted += OnNavigationCompleted;
+			webView.CoreWebView2.Navigate(EarlierUrl);
+			await TestServices.WindowHelper.WaitFor(
+				() => lastSource == EarlierUrl,
+				timeoutMS: 10000,
+				message: "NavigationCompleted should be raised for the earlier document, with Source set to its URL.");
+
+			Assert.AreEqual(
+				"about:blank",
+				await ShowString("<p>Hidden</p>"),
+				"A string shown in a sandboxed frame should be reported as about:blank, not with the earlier URL.");
+		}
+		finally
+		{
+			webView.NavigationCompleted -= OnNavigationCompleted;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25735")]
+	public async Task When_Url_Read_Before_Cross_Origin_Content_Arrives_Then_Its_Url_Is_Reported()
+	{
+		const string DataUrl = "data:text/html,arriving";
+
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		string loadedSource = null;
+		void OnNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args) => loadedSource ??= sender.CoreWebView2.Source;
+
+		try
+		{
+			await UITestHelper.Load(webView);
+			await webView.EnsureCoreWebView2Async();
+			var elementId = GetIframeElementId(webView);
+			webView.NavigationCompleted += OnNavigationCompleted;
+
+			// Start a navigation to a cross-origin document and, in the same task, read the frame's URL as Loaded does when the
+			// WebView2 is added to the tree again before that document arrives.
+			WasmSemanticDomHelper.InvokeBrowserJs(
+				$"(function(){{var w=Microsoft.UI.Xaml.Controls.WebView;w.navigate('{elementId}','{DataUrl}');w.getCurrentUrl('{elementId}');return '';}})()");
+
+			await TestServices.WindowHelper.WaitFor(
+				() => loadedSource is not null,
+				timeoutMS: 10000,
+				message: "NavigationCompleted should be raised when the cross-origin document loads.");
+
+			Assert.AreEqual(DataUrl, loadedSource, "The cross-origin document should be reported with its own URL, not the previous page's.");
+		}
+		finally
+		{
+			webView.NavigationCompleted -= OnNavigationCompleted;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25735")]
+	public async Task When_Loaded_Again_Then_Source_Is_Kept()
+	{
+		// A cross-origin document, whose location the browser hides.
+		const string DataUrl = "data:text/html,kept";
+
+		var webView = new WebView2 { Width = 200, Height = 200 };
+		var documentLoaded = false;
+		void OnNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+			=> documentLoaded |= sender.CoreWebView2.Source == DataUrl;
+
+		try
+		{
+			await UITestHelper.Load(webView);
+			await webView.EnsureCoreWebView2Async();
+			webView.NavigationCompleted += OnNavigationCompleted;
+
+			webView.CoreWebView2.Navigate(DataUrl);
+			await TestServices.WindowHelper.WaitFor(
+				() => documentLoaded,
+				timeoutMS: 10000,
+				message: "NavigationCompleted should be raised for the document, with Source set to its URL.");
+
+			// Unloading and loading the WebView2 again keeps its frame and the document it shows.
+			TestServices.WindowHelper.WindowContent = null;
+			await TestServices.WindowHelper.WaitForIdle();
+			await UITestHelper.Load(webView);
+
+			Assert.AreEqual(new Uri(DataUrl), webView.Source, "Loading the WebView2 again should keep the Source of the document it shows.");
+		}
+		finally
+		{
+			webView.NavigationCompleted -= OnNavigationCompleted;
+			TestServices.WindowHelper.WindowContent = null;
+		}
+	}
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private static async Task<(WeakReference, string)> LoadNavigateAndUnloadWebView2(bool close = false)
@@ -495,6 +637,17 @@ public class Given_WebView2
 
 		return element.ElementId;
 	}
+
+	private static void StartCapturingSecurityErrors()
+		=> WasmSemanticDomHelper.InvokeBrowserJs(
+			"(function(){var errors=window.__unoTestErrors=[];window.__unoTestOnError=function(e){" +
+			"if((e.error&&e.error.name==='SecurityError')||String(e.message).indexOf('SecurityError')>=0){errors.push(String(e.message));}};" +
+			"window.addEventListener('error',window.__unoTestOnError);return '';})()");
+
+	private static string StopCapturingSecurityErrors()
+		=> WasmSemanticDomHelper.InvokeBrowserJs(
+			"(function(){var handler=window.__unoTestOnError;if(!handler){return '';}window.removeEventListener('error',handler);" +
+			"var errors=window.__unoTestErrors.join('\\n');delete window.__unoTestOnError;delete window.__unoTestErrors;return errors;})()");
 
 	private static bool IsInDom(string elementId)
 		=> WasmSemanticDomHelper.InvokeBrowserJs($"(function(){{return document.getElementById('{elementId}') ? '1' : '0';}})()") == "1";
