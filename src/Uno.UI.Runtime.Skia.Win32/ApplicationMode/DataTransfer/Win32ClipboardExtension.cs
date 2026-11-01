@@ -879,7 +879,7 @@ partial class Win32ClipboardExtension // to clipboard
 			return;
 		}
 
-		var stream = task2.Result;
+		using var stream = task2.Result;
 		Debug.Assert(stream.CanRead);
 		stream.Seek(0);
 
