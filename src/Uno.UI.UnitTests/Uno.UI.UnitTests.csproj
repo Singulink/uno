@@ -128,6 +128,9 @@
 		<Compile Include="..\Uno.UI\UI\Xaml\Controls\WebView\Native\Wasm\WebViewFramePermissions.wasm.cs">
 			<Link>Windows_UI_XAML_Controls\WebView2Tests\WebViewFramePermissions.cs</Link>
 		</Compile>
+		<!-- Pure logic split out of the iOS photo picker, which needs a photo library. -->
+		<Compile Include="..\Uno.UWP\Storage\Pickers\Internal\PhotoPickerRepresentation.iOS.cs" Link="Windows_Storage\PhotoPickerRepresentation.iOS.cs" />
+		<Compile Include="..\Uno.UWP\Storage\Pickers\Internal\PhotoPickerType.iOS.cs" Link="Windows_Storage\PhotoPickerType.iOS.cs" />
 	</ItemGroup>
 	<ItemGroup>
 		<!--
