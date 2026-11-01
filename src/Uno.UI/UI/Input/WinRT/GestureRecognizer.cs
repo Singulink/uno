@@ -72,6 +72,16 @@ namespace Windows.UI.Input
 		public GestureRecognizerSuspiciousCases PatchCases { get; set; } = WinRTFeatureConfiguration.GestureRecognizer._defaultPatchSuspiciousCases;
 
 		/// <summary>
+		/// Never reports a touch or pen hold as a tap, even when <see cref="GestureSettings.RightTap"/> is not enabled.
+		/// </summary>
+		/// <remarks>
+		/// Set for UIElement recognizers (unless opted out with <see cref="WinRTFeatureConfiguration.GestureRecognizer.SuppressTapOnHold"/>):
+		/// on WinUI, Tapped and Holding are mutually exclusive and a touch or pen hold is followed by a RightTapped.
+		/// It also makes a press for which Holding was raised a hold, for the right-tap too. Other recognizers keep detecting holds from the timestamps only.
+		/// </remarks>
+		internal bool SuppressesTapOnHold { get; init; }
+
+		/// <summary>
 		/// Measures the tap, double-tap, hold and drag-start ranges on the <see cref="PointerPoint.RawPosition"/>
 		/// instead of the <see cref="PointerPoint.Position"/>.
 		/// </summary>
@@ -81,6 +91,21 @@ namespace Windows.UI.Input
 		/// On WinUI, the recognizer of an element gets positions relative to the root.
 		/// </remarks>
 		internal bool MeasuresTapRangeInWindow { get; init; }
+
+		// The press (pointer and down timestamp) for which a UIElement recognizer last raised Holding.
+		// A single slot: when two fingers hold at once, the first one's release falls back to its timestamps.
+		private static (PointerIdentifier Pointer, ulong Timestamp) _lastHeldPress;
+
+		/// <summary>
+		/// Determines whether a press is a hold: it lasted longer than <see cref="HoldMinDelayMicroseconds"/>,
+		/// or a UIElement recognizer already raised Holding for it (the holding timer can elapse before the pointer timestamps do).
+		/// </summary>
+		internal static bool IsHold(PointerIdentifier pointer, ulong pressedTimestamp, ulong currentTimestamp)
+			=> IsLongPress(pressedTimestamp, currentTimestamp)
+				|| _lastHeldPress == (pointer, pressedTimestamp);
+
+		internal static bool IsLongPress(ulong pressedTimestamp, ulong currentTimestamp)
+			=> currentTimestamp - pressedTimestamp > HoldMinDelayMicroseconds;
 
 		internal bool IsDragging => _manipulation?.IsDragManipulation ?? false;
 

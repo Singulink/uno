@@ -524,6 +524,7 @@ namespace Microsoft.UI.Xaml
 			var recognizer = new GestureRecognizer(this)
 			{
 				PatchCases = WinRTFeatureConfiguration.GestureRecognizer.PatchCasesForUiElement,
+				SuppressesTapOnHold = WinRTFeatureConfiguration.GestureRecognizer.SuppressTapOnHold,
 				MeasuresTapRangeInWindow = true
 			};
 
