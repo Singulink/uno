@@ -35,6 +35,15 @@ partial class InputManager
 		{
 			_dragRoot = new DragRoot();
 			rootElement.Children.Add(_dragRoot);
+
+#if UNO_HAS_ENHANCED_LIFECYCLE
+			// The root element isn't active in the visual tree itself: like the other roots (see VisualTree.AddRoot),
+			// the drag layer must be entered explicitly, or the drag visual is never loaded and its image never shows.
+			if (!_dragRoot.IsActiveInVisualTree)
+			{
+				_dragRoot.Enter(new EnterParams(isLive: true), 0);
+			}
+#endif
 		}
 
 		_dragRoot.Show(dragView);
@@ -47,6 +56,10 @@ partial class InputManager
 
 			if (_dragRoot.PendingDragCount == 0)
 			{
+#if UNO_HAS_ENHANCED_LIFECYCLE
+				// As WinUI's VisualTree::RemoveRoot does, leave the live tree before the layer is removed.
+				_dragRoot.Leave(new LeaveParams(isLive: true));
+#endif
 				rootElement.Children.Remove(_dragRoot);
 				_dragRoot = null;
 			}
