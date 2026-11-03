@@ -1430,7 +1430,7 @@ namespace Microsoft.UI.Xaml.Controls
 
 		/// <summary>
 		/// Returns <paramref name="text"/> with its line breaks as the TextBox stores them, as on WinUI: only the first line in a
-		/// single-line TextBox, and \r for every line break in a multi-line Skia one. The coercion and the MaxLength check both use it.
+		/// single-line TextBox, and \r for every line break in a multi-line Skia one. The coercion, the MaxLength check and paste use it.
 		/// </summary>
 		/// <param name="adjustPendingSelection">Whether the pending selection, which counts each \r\n as two characters, follows the change.</param>
 		private string NormalizeLineBreaks(string text, bool adjustPendingSelection = false)
@@ -1631,11 +1631,9 @@ namespace Microsoft.UI.Xaml.Controls
 			var selectionLength = SelectionLength;
 			var currentText = Text;
 
-			if (!AcceptsReturn)
-			{
-				// A single-line TextBox takes the pasted text's first line and keeps the text after the caret, as on WinUI.
-				clipboardText = NormalizeLineBreaks(clipboardText);
-			}
+			// Paste the line breaks as the TextBox stores them, so the room left under MaxLength counts what will be there. A
+			// single-line TextBox takes the pasted text's first line and keeps the text after the caret, as on WinUI.
+			clipboardText = NormalizeLineBreaks(clipboardText);
 
 			var adjustedClipboardText = clipboardText;
 
