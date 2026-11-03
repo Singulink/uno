@@ -8102,6 +8102,158 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 
 		#region IME Composition Tests
 
+		public enum ImeEnding
+		{
+			Cancel,
+			EmptyUpdate,
+			EmptyCommit,
+		}
+
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25997")]
+		[DataRow("0123456789", 0, 3, "k", 5, false, ImeEnding.Cancel, DisplayName = "Text longer than MaxLength, cancelled")]
+		[DataRow("0123456789", 0, 3, "k", 5, false, ImeEnding.EmptyUpdate, DisplayName = "Text longer than MaxLength, emptied")]
+		[DataRow("0123456789", 0, 3, "k", 5, false, ImeEnding.EmptyCommit, DisplayName = "Text longer than MaxLength, committed empty")]
+		[DataRow("01234", 1, 2, "kan", 5, false, ImeEnding.Cancel, DisplayName = "Text at MaxLength, cancelled")]
+		[DataRow("01234", 1, 2, "k", 0, true, ImeEnding.Cancel, DisplayName = "Refused by BeforeTextChanging, cancelled")]
+		[DataRow("01234", 1, 2, "k", 0, true, ImeEnding.EmptyCommit, DisplayName = "Refused by BeforeTextChanging, committed empty")]
+		public async Task When_IME_Composition_Over_A_Selection_Is_Refused_Then_Ending_It_Keeps_Text(
+			string text,
+			int selectionStart,
+			int selectionLength,
+			string composed,
+			int maxLength,
+			bool refuseInBeforeTextChanging,
+			ImeEnding ending)
+		{
+			using var _ = new TextBoxFeatureConfigDisposable();
+			var fake = new FakeImeTextBoxExtension();
+			using var imeDisposable = TextBox.SetImeExtensionForTesting(fake);
+
+			var SUT = new TextBox { Text = text, MaxLength = maxLength };
+			var ended = new List<(int start, int length)>();
+			SUT.TextCompositionEnded += (_, e) => ended.Add((e.StartIndex, e.Length));
+			SUT.BeforeTextChanging += (_, e) => e.Cancel = refuseInBeforeTextChanging && e.NewText.Contains(composed);
+			try
+			{
+				WindowHelper.WindowContent = SUT;
+				await WindowHelper.WaitForLoaded(SUT);
+				SUT.Focus(FocusState.Programmatic);
+				SUT.Select(selectionStart, selectionLength);
+				await WindowHelper.WaitForIdle();
+
+				fake.SimulateCompositionStart();
+				fake.SimulateCompositionUpdate(composed);
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual(text, SUT.Text, "the composition is refused");
+				Assert.AreEqual(0, SUT.CompositionLength, "no composition text is in the TextBox");
+
+				switch (ending)
+				{
+					case ImeEnding.Cancel:
+						fake.SimulateCompositionCancel();
+						break;
+					case ImeEnding.EmptyUpdate:
+						// The IME empties its preedit, for example after the user deletes the composed character.
+						fake.SimulateCompositionUpdate("");
+						await WindowHelper.WaitForIdle();
+						Assert.AreEqual(text, SUT.Text, "emptying the refused composition removes nothing");
+						fake.SimulateCompositionCancel();
+						break;
+					case ImeEnding.EmptyCommit:
+						fake.SimulateCompositionComplete("");
+						break;
+				}
+
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual(text, SUT.Text, "ending the refused composition removes nothing");
+				CollectionAssert.AreEqual(new[] { (selectionStart, 0) }, ended, "the ended composition has no text");
+			}
+			finally
+			{
+				WindowHelper.WindowContent = null;
+			}
+		}
+
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25997")]
+		public async Task When_IME_Commit_Fits_After_A_Refused_Update()
+		{
+			using var _ = new TextBoxFeatureConfigDisposable();
+			var fake = new FakeImeTextBoxExtension();
+			using var imeDisposable = TextBox.SetImeExtensionForTesting(fake);
+
+			var SUT = new TextBox { Text = "01234", MaxLength = 5 };
+			var changed = new List<(int start, int length)>();
+			var ended = new List<(int start, int length)>();
+			SUT.TextCompositionChanged += (_, e) => changed.Add((e.StartIndex, e.Length));
+			SUT.TextCompositionEnded += (_, e) => ended.Add((e.StartIndex, e.Length));
+			try
+			{
+				WindowHelper.WindowContent = SUT;
+				await WindowHelper.WaitForLoaded(SUT);
+				SUT.Focus(FocusState.Programmatic);
+				SUT.Select(1, 2);
+				await WindowHelper.WaitForIdle();
+
+				fake.SimulateCompositionStart();
+				fake.SimulateCompositionUpdate("k");
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual("0k34", SUT.Text);
+
+				fake.SimulateCompositionUpdate("kan");
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual("0k34", SUT.Text, "the longer reading doesn't fit");
+
+				fake.SimulateCompositionComplete("\u304B\u3093");
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual("0\u304B\u309334", SUT.Text, "the commit replaces the composition range");
+
+				CollectionAssert.AreEqual(new[] { (1, 1) }, changed, "no change is reported for the refused update");
+				CollectionAssert.AreEqual(new[] { (1, 2) }, ended);
+			}
+			finally
+			{
+				WindowHelper.WindowContent = null;
+			}
+		}
+
+		[TestMethod]
+		[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25997")]
+		public async Task When_IME_Commit_Is_Refused_By_MaxLength()
+		{
+			using var _ = new TextBoxFeatureConfigDisposable();
+			var fake = new FakeImeTextBoxExtension();
+			using var imeDisposable = TextBox.SetImeExtensionForTesting(fake);
+
+			var SUT = new TextBox { Text = "012", MaxLength = 4 };
+			var ended = new List<(int start, int length)>();
+			SUT.TextCompositionEnded += (_, e) => ended.Add((e.StartIndex, e.Length));
+			try
+			{
+				WindowHelper.WindowContent = SUT;
+				await WindowHelper.WaitForLoaded(SUT);
+				SUT.Focus(FocusState.Programmatic);
+				SUT.Select(3, 0);
+				await WindowHelper.WaitForIdle();
+
+				fake.SimulateCompositionStart();
+				fake.SimulateCompositionUpdate("k");
+				await WindowHelper.WaitForIdle();
+				Assert.AreEqual("012k", SUT.Text);
+
+				fake.SimulateCompositionComplete("\u304B\u3093");
+				await WindowHelper.WaitForIdle();
+
+				Assert.AreEqual("012k", SUT.Text, "the commit doesn't fit, so the composition text stays");
+				CollectionAssert.AreEqual(new[] { (3, 1) }, ended, "the ended range is the text that is there");
+			}
+			finally
+			{
+				WindowHelper.WindowContent = null;
+			}
+		}
+
 		[TestMethod]
 		public async Task When_IME_Composition_Committed()
 		{

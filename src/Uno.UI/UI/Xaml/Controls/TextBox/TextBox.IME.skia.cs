@@ -24,6 +24,10 @@ public partial class TextBox
 	private int _compositionStartIndex;
 	private int _compositionLength;
 	private int _compositionResolvedLength;
+	// The selection that the composition's first applied text replaces. Until some composition text is applied, the composition
+	// has no text of its own (_compositionLength is 0), and an empty replacement leaves the selection alone.
+	private int _compositionSelectionLength;
+	private bool _compositionApplied;
 
 	internal bool ShouldSwallowKeyDuringComposition => _isComposing && !_compositionAppliedByPlatform;
 
@@ -107,12 +111,13 @@ public partial class TextBox
 
 		_isComposing = true;
 		_compositionStartIndex = SelectionStart;
-		// Initialize from SelectionLength so the first ReplaceCompositionText
-		// replaces the selected range, matching normal typing behavior.
-		_compositionLength = SelectionLength;
+		// The first ReplaceCompositionText replaces the selected range, matching normal typing behavior.
+		_compositionSelectionLength = SelectionLength;
+		_compositionLength = 0;
 		_compositionResolvedLength = 0;
+		_compositionApplied = false;
 
-		TextCompositionStarted?.Invoke(this, new TextCompositionStartedEventArgs(_compositionStartIndex, _compositionLength));
+		TextCompositionStarted?.Invoke(this, new TextCompositionStartedEventArgs(_compositionStartIndex, _compositionSelectionLength));
 	}
 
 	private void OnImeCompositionUpdated(string compositionText, int cursorPosition, int resolvedLength, bool textAlreadyApplied, int startIndex, bool textChangePending)
@@ -136,10 +141,12 @@ public partial class TextBox
 			// Mark the session so key events aren't swallowed by the IsComposing check
 			// (Android key events are independent of composition events).
 			_compositionAppliedByPlatform = true;
+			_compositionApplied = true;
 		}
-		else
+		else if (!ReplaceCompositionText(compositionText, cursorPosition))
 		{
-			ReplaceCompositionText(compositionText, cursorPosition);
+			// Keep the range on the text that is really there, so clearing the composition can't delete a neighbor.
+			return;
 		}
 
 		_compositionLength = compositionText.Length;
@@ -164,16 +171,22 @@ public partial class TextBox
 		}
 
 		TrySetCurrentlyTyping(true);
-		if (!textAlreadyApplied)
+		var applied = textAlreadyApplied || ReplaceCompositionText(committedText);
+
+		var (startIndex, length) = ResetComposition();
+
+		if (applied)
 		{
-			ReplaceCompositionText(committedText);
+			// The committed text's own range: a platform applying the text itself may sync it only after
+			// this callback (Android's EndBatchEdit), so the text is not yet something to clamp to.
+			TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, committedText.Length));
+		}
+		else
+		{
+			// A refused commit leaves the composition text that was already there, so report that range.
+			RaiseTextCompositionEnded(startIndex, length);
 		}
 
-		var (startIndex, _) = ResetComposition();
-
-		// The committed text's own range: a platform applying the text itself may sync it only after
-		// this callback (Android's EndBatchEdit), so the text is not yet something to clamp to.
-		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, committedText.Length));
 		InvalidateTextBoxRender();
 	}
 
@@ -194,7 +207,7 @@ public partial class TextBox
 		InvalidateTextBoxRender();
 	}
 
-	// Clears the composition state and returns the range it covered.
+	// Clears the composition state and returns the range of the composition text it covered.
 	private (int startIndex, int length) ResetComposition()
 	{
 		var range = (_compositionStartIndex, _compositionLength);
@@ -216,14 +229,25 @@ public partial class TextBox
 		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(start, Math.Min(length, Text.Length - start)));
 	}
 
-	private void ReplaceCompositionText(string newText, int cursorPosition = -1)
+	/// <summary>
+	/// Replaces the composition range with <paramref name="newText"/>, through the user-input path.
+	/// </summary>
+	/// <returns>Whether the replacement was applied: MaxLength or a BeforeTextChanging handler can refuse it, and an empty
+	/// replacement before any composition text was applied leaves the selection it would replace.</returns>
+	private bool ReplaceCompositionText(string newText, int cursorPosition = -1)
 	{
+		if (!_compositionApplied && newText.Length == 0)
+		{
+			return false;
+		}
+
 		var text = Text;
 		// Clamp indices to text bounds in case the platform modified the text
 		// out-of-band (e.g., Android IME autocorrect during a composition session)
 		// leaving _compositionStartIndex/_compositionLength stale.
 		var startIndex = Math.Min(_compositionStartIndex, text.Length);
-		var endIndex = Math.Min(_compositionStartIndex + _compositionLength, text.Length);
+		var length = _compositionApplied ? _compositionLength : _compositionSelectionLength;
+		var endIndex = Math.Min(_compositionStartIndex + length, text.Length);
 		var replaced = text[..startIndex] + newText + text[endIndex..];
 
 		// Place the caret at the IME-reported cursor position within the composition,
@@ -233,18 +257,10 @@ public partial class TextBox
 			? Math.Min(cursorPosition, newText.Length)
 			: newText.Length;
 
-		_suppressCurrentlyTyping = true;
-		_clearHistoryOnTextChanged = false;
-		try
-		{
-			_pendingSelection = (startIndex + caretOffset, 0);
-			ProcessTextInput(replaced);
-		}
-		finally
-		{
-			_clearHistoryOnTextChanged = true;
-			_suppressCurrentlyTyping = false;
-		}
+		_pendingSelection = (startIndex + caretOffset, 0);
+		var applied = ProcessTextInputKeepingHistory(replaced);
+		_compositionApplied |= applied;
+		return applied;
 	}
 
 	/// <summary>
