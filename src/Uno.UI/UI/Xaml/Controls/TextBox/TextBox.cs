@@ -1639,8 +1639,8 @@ namespace Microsoft.UI.Xaml.Controls
 
 			if (MaxLength > 0)
 			{
-				var clipboardRangeToBePasted = Math.Max(0, Math.Min(clipboardText.Length, MaxLength - currentText.Length));
-				adjustedClipboardText = clipboardText[..clipboardRangeToBePasted];
+				// A surrogate pair that doesn't fit is left out whole, as on WinUI: half of one isn't text.
+				adjustedClipboardText = TruncateToUtf16Limit(clipboardText, MaxLength - currentText.Length);
 			}
 
 			currentText = currentText.Insert(selectionStart, adjustedClipboardText);
