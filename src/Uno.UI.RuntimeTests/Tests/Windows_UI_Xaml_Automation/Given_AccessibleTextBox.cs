@@ -503,9 +503,6 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Automation
 				.Replace("\r", "\\r")
 				.Replace("\n", "\\n");
 
-		private static bool HiddenNativeTextBoxExists()
-			=> InvokeBrowserJs("(function(){return document.getElementById('uno-input') ? '1' : '0';})()") == "1";
-
 		private static void TypeCharacterIntoSemanticTextBox(TextBox textBox, string character)
 		{
 			var escapedCharacter = character

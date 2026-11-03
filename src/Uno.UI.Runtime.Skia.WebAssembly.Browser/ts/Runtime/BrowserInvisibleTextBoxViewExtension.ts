@@ -96,6 +96,15 @@
 			return text.replace(/\r\n?/g, "\n");
 		}
 
+		/**
+		 * Stops the browser's own paste and returns the pasted text, or null when the clipboard has no text (an image, for
+		 * instance).
+		 */
+		public static getPastedText(ev: ClipboardEvent): string | null {
+			ev.preventDefault();
+			return ev.clipboardData?.types.includes("text/plain") ? ev.clipboardData.getData("text/plain") : null;
+		}
+
 		public static initialize() {
 			if (BrowserInvisibleTextBoxViewExtension._exports == undefined) {
 				const browserExports = WebAssemblyWindowWrapper.getAssemblyExports();
@@ -214,10 +223,7 @@
 				}
 			};
 
-			input.onpaste = ev => {
-				BrowserInvisibleTextBoxViewExtension._exports.OnNativePaste(ev.clipboardData.getData("text"));
-				ev.preventDefault();
-			};
+			input.onpaste = ev => BrowserInvisibleTextBoxViewExtension._exports.OnNativePaste(BrowserInvisibleTextBoxViewExtension.getPastedText(ev));
 
 			// C# drives focus one-way (StartEntry/EndEntry call focus()/blur()), so a blur the
 			// browser initiates on its own — e.g. tapping outside, or the touch-synthesized

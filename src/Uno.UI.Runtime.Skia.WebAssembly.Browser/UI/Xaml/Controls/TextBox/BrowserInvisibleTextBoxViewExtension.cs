@@ -54,12 +54,14 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 		}
 	}
 
+	/// <param name="clipboardText">The pasted text, or null when the clipboard has no text (an image, for instance).</param>
 	[JSExport]
 	private static void OnNativePaste(string clipboardText)
 	{
 		var xamlRoot = WebAssemblyWindowWrapper.Instance.XamlRoot;
 		// We are expecting this to be called only when the TextBox is focused, as it's the result of an interaction with the native HTML input.
-		if (FocusManager.GetFocusedElement(xamlRoot!) is TextBox textBox)
+		// With no text to paste, the selection stays, as on WinUI.
+		if (clipboardText is not null && FocusManager.GetFocusedElement(xamlRoot!) is TextBox textBox)
 		{
 			textBox.PasteFromClipboard(clipboardText);
 		}
