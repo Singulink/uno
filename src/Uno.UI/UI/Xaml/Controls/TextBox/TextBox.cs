@@ -1711,25 +1711,33 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 
 			CopySelectionToClipboard();
-			CutSelectionToClipboardPartial();
-#if __SKIA__
-			try
-			{
-				_suppressCurrentlyTyping = true;
-#else
-			{
-#endif
-				Text = Text.Remove(SelectionStart, SelectionLength);
-			}
-#if __SKIA__
-			finally
-			{
-				_suppressCurrentlyTyping = false;
-			}
-#endif
+			CutSelection();
 		}
 
+		/// <summary>
+		/// Removes the selection the way a cut does, without copying it: as user input, recorded as an undo step.
+		/// </summary>
+		internal void CutSelection()
+		{
+			if (IsReadOnly || this is PasswordBox)
+			{
+				return;
+			}
+
+#if __SKIA__
+			if (_isSkiaTextBox)
+			{
+				CutSelectionToClipboardPartial();
+				return;
+			}
+#endif
+
+			Text = Text.Remove(SelectionStart, SelectionLength);
+		}
+
+#if __SKIA__
 		partial void CutSelectionToClipboardPartial();
+#endif
 
 		internal override bool CanHaveChildren() => true;
 

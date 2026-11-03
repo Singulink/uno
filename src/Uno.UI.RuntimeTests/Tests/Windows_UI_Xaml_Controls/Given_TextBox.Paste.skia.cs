@@ -12,7 +12,7 @@ using static Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Automation.WasmSemanticDo
 
 namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls;
 
-// Pastes through the internal paste-with-text entry point, so these tests leave the clipboard alone.
+// Pastes through the internal paste-with-text entry point, and cuts through the internal cut that doesn't copy, so these tests leave the clipboard alone.
 // The expected values were recorded on WinUI (Windows App SDK 1.8) with an app that drives a TextBox through its own APIs, the
 // WinUI recording app, unless a test says otherwise.
 [TestClass]
@@ -239,6 +239,52 @@ public class Given_TextBox_Paste
 			})()
 			""";
 
+	[TestMethod]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25998")]
+	public async Task When_Undoing_A_Cut()
+	{
+		try
+		{
+			var SUT = await LoadFocused("01234", maxLength: 0);
+			SUT.Select(1, 2);
+
+			await Cut(SUT);
+			AssertState(SUT, "034", 1, 0);
+			Assert.IsTrue(SUT.CanUndo);
+
+			await Undo(SUT);
+			AssertState(SUT, "01234", 1, 2, "Undo puts back the cut text and its selection");
+			Assert.IsTrue(SUT.CanRedo);
+		}
+		finally
+		{
+			WindowHelper.WindowContent = null;
+		}
+	}
+
+	[TestMethod]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25998")]
+	public async Task When_Undoing_A_Cut_Of_A_Backward_Selection()
+	{
+		try
+		{
+			// Not recorded on WinUI: the WinUI recording app can't select backward.
+			var SUT = await LoadFocused("01234", maxLength: 0);
+			SUT.SelectInternal(3, -2);
+			Assert.IsTrue(SUT.IsBackwardSelection);
+
+			await Cut(SUT);
+			await Undo(SUT);
+
+			AssertState(SUT, "01234", 1, 2);
+			Assert.IsTrue(SUT.IsBackwardSelection, "Undo puts the selection back with its direction");
+		}
+		finally
+		{
+			WindowHelper.WindowContent = null;
+		}
+	}
+
 	private static async Task<TextBox> LoadFocused(string text, int maxLength, bool acceptsReturn = false, Action<TextBox>? configure = null)
 	{
 		// Text before MaxLength, the order XAML applies them in when Text comes first.
@@ -254,6 +300,18 @@ public class Given_TextBox_Paste
 	private static async Task Paste(TextBox textBox, string text)
 	{
 		textBox.PasteFromClipboard(text);
+		await WindowHelper.WaitForIdle();
+	}
+
+	private static async Task Cut(TextBox textBox)
+	{
+		textBox.CutSelection();
+		await WindowHelper.WaitForIdle();
+	}
+
+	private static async Task Undo(TextBox textBox)
+	{
+		textBox.Undo();
 		await WindowHelper.WaitForIdle();
 	}
 
