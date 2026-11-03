@@ -1649,37 +1649,36 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 
 			currentText = currentText.Insert(selectionStart, adjustedClipboardText);
-			PasteFromClipboardPartial(adjustedClipboardText, selectionStart, currentText);
-
 #if __SKIA__
-			try
+			if (_isSkiaTextBox)
 			{
-				_clearHistoryOnTextChanged = false;
-				_suppressCurrentlyTyping = true;
-#else
-			{
-#endif
-				ProcessTextInput(currentText);
-			}
-#if __SKIA__
-			finally
-			{
-				_suppressCurrentlyTyping = false;
-				_clearHistoryOnTextChanged = true;
-				if (Text.IsNullOrEmpty())
+				try
 				{
-					// On WinUI, the caret never has thumbs if there is no text
-					CaretMode = CaretDisplayMode.ThumblessCaretShowing;
+					PasteFromClipboardPartial(adjustedClipboardText, selectionStart, currentText);
+				}
+				finally
+				{
+					if (Text.IsNullOrEmpty())
+					{
+						// On WinUI, the caret never has thumbs if there is no text
+						CaretMode = CaretDisplayMode.ThumblessCaretShowing;
+					}
 				}
 			}
+			else
 #endif
+			{
+				ProcessTextInput(currentText);
+			}
 
 #if !IS_UNIT_TESTS
 			RaisePaste(new TextControlPasteEventArgs());
 #endif
 		}
 
+#if __SKIA__
 		partial void PasteFromClipboardPartial(string adjustedClipboardText, int selectionStart, string newText);
+#endif
 
 		/// <summary>
 		/// Copies the selected content to the OS clipboard.
