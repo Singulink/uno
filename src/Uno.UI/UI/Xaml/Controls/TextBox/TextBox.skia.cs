@@ -1773,7 +1773,7 @@ public partial class TextBox : ITextSelectionGripperHost
 		// text; inserting nothing where nothing is selected doesn't.
 		TrySetCurrentlyTyping(false);
 		HistoryRecord? record = SelectionLength > 0 || adjustedClipboardText.Length > 0
-			? CreateHistoryRecord(new ReplaceAction(Text, newText, selectionStart))
+			? CreateHistoryRecord(new ReplaceAction(Text, newText, selectionStart + adjustedClipboardText.Length))
 			: null;
 
 		_pendingSelection = (selectionStart + adjustedClipboardText.Length, 0);
@@ -1790,7 +1790,7 @@ public partial class TextBox : ITextSelectionGripperHost
 		}
 
 		var newText = Text.Remove(SelectionStart, SelectionLength);
-		var record = CreateHistoryRecord(new ReplaceAction(Text, newText, SelectionStart + SelectionLength));
+		var record = CreateHistoryRecord(new ReplaceAction(Text, newText, SelectionStart));
 		_pendingSelection = (_selection.start, 0);
 		ProcessTextInputKeepingHistory(newText, record);
 	}
