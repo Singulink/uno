@@ -1200,10 +1200,12 @@ internal partial class WebAssemblyAccessibility : SkiaAccessibilityBase
 
 	/// <summary>
 	/// Called when text is input in a text box.
-	/// Routes to the IValueProvider.SetValue() method on the automation peer.
+	/// Routes TextBox and PasswordBox input to their own accessibility input, and other controls to the
+	/// IValueProvider.SetValue() method on the automation peer.
 	/// </summary>
+	/// <param name="isComposing">Whether the browser is in the middle of an IME composition.</param>
 	[JSExport]
-	public static void OnTextInput(IntPtr handle, string value, int selectionStart, int selectionEnd)
+	public static void OnTextInput(IntPtr handle, string value, int selectionStart, int selectionEnd, bool isComposing)
 	{
 		var @this = Instance;
 		if (@this.Log().IsEnabled(LogLevel.Trace))
@@ -1215,10 +1217,15 @@ internal partial class WebAssemblyAccessibility : SkiaAccessibilityBase
 		{
 			if (owner is TextBox textBox)
 			{
-				var maxLength = value?.Length ?? 0;
-				selectionStart = Math.Max(0, Math.Min(selectionStart, maxLength));
-				selectionEnd = Math.Max(selectionStart, Math.Min(selectionEnd, maxLength));
-				textBox.SetPendingSelection(selectionStart, selectionEnd - selectionStart);
+				// The browser's input events are typing, IME, dictation or autocorrect: user input, not a value set from code.
+				// During a composition, showing the element its text again would break the composition; the commit that ends it does.
+				if (!textBox.ApplyAccessibilityTextInput(value, selectionStart, selectionEnd) && !isComposing)
+				{
+					// Nothing changed in the TextBox, so nothing else shows the semantic element its text again.
+					@this.SyncTextBoxValueAndSelection(textBox);
+				}
+
+				return;
 			}
 
 			var peer = owner.GetOrCreateAutomationPeer();

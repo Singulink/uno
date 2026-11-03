@@ -138,7 +138,7 @@ internal sealed partial class UnoSKCanvasView : GLSurfaceView, IUnoSkiaRenderVie
 			if (AndroidSkiaTextBoxNotificationsProviderSingleton.Instance.LiveTextBoxesMap.TryGetValue(virtualId, out var textBox))
 			{
 				var autofillValue = (AutofillValue)values.ValueAt(i)!;
-				textBox.Text = autofillValue.TextValue;
+				textBox.ApplyAutofill(autofillValue.TextValue ?? string.Empty);
 			}
 		}
 	}

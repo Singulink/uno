@@ -613,13 +613,14 @@ namespace Uno.UI.Runtime.Skia {
 			BrowserInvisibleTextBoxViewExtension.attachTextInputKeyHandlers(element, multiline);
 
 			// Input event handler for text changes (T050)
-			element.addEventListener('input', () => {
+			element.addEventListener('input', (ev: Event) => {
 				if (callbacks.onTextInput) {
 					callbacks.onTextInput(
 						handle,
 						element.value,
 						element.selectionStart ?? 0,
-						element.selectionEnd ?? 0
+						element.selectionEnd ?? 0,
+						(ev as InputEvent).isComposing === true
 					);
 				}
 			});
@@ -631,7 +632,8 @@ namespace Uno.UI.Runtime.Skia {
 						handle,
 						element.value,
 						element.selectionStart ?? 0,
-						element.selectionEnd ?? 0
+						element.selectionEnd ?? 0,
+						false
 					);
 				}
 			});

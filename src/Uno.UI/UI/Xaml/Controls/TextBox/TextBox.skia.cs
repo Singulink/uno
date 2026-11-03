@@ -1185,6 +1185,28 @@ public partial class TextBox : ITextSelectionGripperHost
 	internal void SetPendingSelection(int selectionStart, int selectionLength)
 		=> _pendingSelection = (selectionStart, selectionLength);
 
+	/// <summary>
+	/// Applies an edit made in an accessibility element, such as the browser's semantic text box, as user input, so MaxLength
+	/// applies.
+	/// </summary>
+	/// <returns>Whether the edit was applied. When it wasn't, the host shows its element the TextBox's text again.</returns>
+#nullable enable
+	internal bool ApplyAccessibilityTextInput(string? value, int selectionStart, int selectionEnd)
+#nullable restore
+	{
+		if (IsReadOnly || !IsEnabled)
+		{
+			return false;
+		}
+
+		var text = value ?? string.Empty;
+		var start = Math.Clamp(selectionStart, 0, text.Length);
+		var end = Math.Clamp(selectionEnd, start, text.Length);
+		SetPendingSelection(start, end - start);
+		ProcessTextInput(text, out var applied);
+		return applied;
+	}
+
 	private void KeyDownBack(KeyRoutedEventArgs args, ref string text, bool ctrl, bool shift, ref int selectionStart, ref int selectionLength)
 	{
 		// on Apple platforms it is `option` + `delete` (same location as backspace on PC keyboards) that removes the previous word
@@ -1697,10 +1719,14 @@ public partial class TextBox : ITextSelectionGripperHost
 		}
 	}
 
-	private string RemoveLF(string baseString)
+	private string RemoveLF(string baseString, bool adjustPendingSelection)
 	{
+		if (!baseString.Contains('\n'))
+		{
+			return baseString;
+		}
 
-		var builder = new StringBuilder();
+		var builder = new StringBuilder(baseString.Length);
 		for (int i = 0; i < baseString.Length; i++)
 		{
 			var c = baseString[i];
@@ -1710,7 +1736,7 @@ public partial class TextBox : ITextSelectionGripperHost
 			}
 			else if (c == '\r' && i + 1 < baseString.Length && baseString[i + 1] == '\n')
 			{
-				if (_pendingSelection is { } selection)
+				if (adjustPendingSelection && _pendingSelection is { } selection)
 				{
 					var (start, end) = (selection.start, selection.start + selection.length);
 					if (start > i)
@@ -1824,11 +1850,11 @@ public partial class TextBox : ITextSelectionGripperHost
 				_pendingSelection = currentAction.SelectionEndsAtTheStart ?
 					(currentAction.SelectionStart + currentAction.SelectionLength, -currentAction.SelectionLength) :
 					(currentAction.SelectionStart, currentAction.SelectionLength);
-				ProcessTextInput(r.OldText);
+				ProcessTextInput(r.OldText, limitToMaxLength: false);
 				break;
 			case DeleteAction d:
 				_pendingSelection = (d.UndoSelectionStart, d.UndoSelectionLength);
-				ProcessTextInput(d.OldText);
+				ProcessTextInput(d.OldText, limitToMaxLength: false);
 				break;
 			case SentinelAction:
 				break;
@@ -1861,11 +1887,11 @@ public partial class TextBox : ITextSelectionGripperHost
 		{
 			case ReplaceAction r:
 				_pendingSelection = (r.caretIndexAfterReplacement, 0); // we always have an empty selection here.
-				ProcessTextInput(r.NewText);
+				ProcessTextInput(r.NewText, limitToMaxLength: false);
 				break;
 			case DeleteAction d:
 				_pendingSelection = (Math.Min(d.UndoSelectionStart, d.UndoSelectionStart + d.UndoSelectionLength), 0);
-				ProcessTextInput(d.NewText);
+				ProcessTextInput(d.NewText, limitToMaxLength: false);
 				break;
 			case SentinelAction:
 				break;

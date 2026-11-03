@@ -112,6 +112,15 @@ namespace Microsoft.UI.Xaml.Controls
 		/// </summary>
 		private bool _isInputClearingText;
 		/// <summary>
+		/// Set when a BeforeTextChanging handler cancels the edit that <see cref="ProcessTextInput(string, out bool, bool)"/> applies.
+		/// </summary>
+		private bool _wasInputCancelled;
+		/// <summary>
+		/// Set while <see cref="Text"/> takes the value of <see cref="ProcessTextInput(string, out bool, bool)"/>, until that value's
+		/// coercion runs, so a value set from code by a handler during the edit can't mark the edit as cancelled.
+		/// </summary>
+		private bool _isCoercingInput;
+		/// <summary>
 		/// Indicates how many TextChanged events are pending. This is needed for AutoSuggestBox, which needs to
 		/// respond only to the last TextChange event, not all of them.
 		/// </summary>
@@ -458,28 +467,12 @@ namespace Microsoft.UI.Xaml.Controls
 				return ""; //Pushing null to the binding resets the text. (Setting null to the Text property directly throws an exception.)
 			}
 
-			if (MaxLength > 0 && baseString.Length > MaxLength)
-			{
-				// Reject the new string if it's longer than the MaxLength
-#if __SKIA__
-				_pendingSelection = null;
-#endif
-				return DependencyProperty.UnsetValue;
-			}
+			var isCoercingInput = _isCoercingInput;
+			_isCoercingInput = false;
 
-			if (!AcceptsReturn)
-			{
-				baseString = GetFirstLine(baseString);
-			}
+			// The pending selection uses indices from before the \n of each \r\n is removed, so it moves with the removal.
+			baseString = NormalizeLineBreaks(baseString, adjustPendingSelection: true);
 #if __SKIA__
-			else if (_isSkiaTextBox)
-			{
-				// WinUI replaces all \n's and and \r\n's by \r. This is annoying because
-				// the _pendingSelection uses indices before this removal.
-				// On UIKit targets we use invisible overlay and replacing newlines would break the sync between
-				// the native input and the managed representation.
-				baseString = RemoveLF(baseString);
-			}
 
 			// make sure this coercion doesn't cause the pending selection to be out of range
 			if (_pendingSelection is { } selection2)
@@ -494,6 +487,11 @@ namespace Microsoft.UI.Xaml.Controls
 			BeforeTextChanging?.Invoke(this, args);
 			if (args.Cancel)
 			{
+				if (isCoercingInput)
+				{
+					_wasInputCancelled = true;
+				}
+
 #if __SKIA__
 				if (_isSkiaTextBox)
 				{
@@ -1351,16 +1349,37 @@ namespace Microsoft.UI.Xaml.Controls
 		/// Respond to text input from user interaction.
 		/// </summary>
 		/// <param name="newText">The most recent version of the text from the input field.</param>
+		/// <param name="limitToMaxLength">Whether <see cref="MaxLength"/> applies; undo and redo put back text the control already held.</param>
 		/// <returns>The value of the <see cref="Text"/> property, which may have been modified programmatically.</returns>
-		internal string ProcessTextInput(string newText)
+		internal string ProcessTextInput(string newText, bool limitToMaxLength = true)
+			=> ProcessTextInput(newText, out _, limitToMaxLength);
+
+		/// <inheritdoc cref="ProcessTextInput(string, bool)"/>
+		/// <param name="applied">Whether the edit went in: false when MaxLength or a BeforeTextChanging handler refused it.</param>
+		internal string ProcessTextInput(string newText, out bool applied, bool limitToMaxLength = true)
 		{
+			if (limitToMaxLength && IsRefusedByMaxLength(newText))
+			{
+#if __SKIA__
+				_pendingSelection = null;
+#endif
+				applied = false;
+				return Text;
+			}
+
 			var isCurrentlyModifying = _isInputModifyingText;
+			var wasInputCancelled = _wasInputCancelled;
+			var wasCoercingInput = _isCoercingInput;
 
 			try
 			{
 				_isInputModifyingText = true;
+				_wasInputCancelled = false;
+				_isCoercingInput = true;
 				var oldText = Text;
 				Text = newText;
+				_isCoercingInput = false;
+				applied = !_wasInputCancelled;
 
 #if __SKIA__
 				if (_pendingSelection is { } selection && Text == oldText)
@@ -1375,6 +1394,8 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 			finally
 			{
+				_isCoercingInput = wasCoercingInput;
+				_wasInputCancelled = wasInputCancelled;
 				if (!isCurrentlyModifying)
 				{
 					// The all to ProcessTextInput may be recursing, we only want to restore
@@ -1384,6 +1405,108 @@ namespace Microsoft.UI.Xaml.Controls
 			}
 
 			return Text; //This may have been modified by BeforeTextChanging, TextChanging, DP callback, etc
+		}
+
+		/// <summary>
+		/// MaxLength limits user input only. It refuses an edit that would leave the text longer than MaxLength unless the edit
+		/// only deletes, so while the text is over the limit, a replacement of the same length or shorter is refused too. Text
+		/// that doesn't change, such as a caret move, is let through.
+		/// </summary>
+		private bool IsRefusedByMaxLength(string newText)
+		{
+			// Normalizing line breaks never lengthens the text, so text within MaxLength needs no closer look.
+			if (MaxLength <= 0 || newText.Length <= MaxLength)
+			{
+				return false;
+			}
+
+			// Compare the text as the coercion will store it, so a native view's line breaks don't hide a deletion.
+			var text = Text;
+			var normalizedText = NormalizeLineBreaks(newText);
+			return normalizedText.Length > MaxLength
+				&& normalizedText != text
+				&& !IsDeletionOnly(text, normalizedText);
+		}
+
+		/// <summary>
+		/// Returns <paramref name="text"/> with its line breaks as the TextBox stores them, as on WinUI: only the first line in a
+		/// single-line TextBox, and \r for every line break in a multi-line Skia one. The coercion and the MaxLength check both use it.
+		/// </summary>
+		/// <param name="adjustPendingSelection">Whether the pending selection, which counts each \r\n as two characters, follows the change.</param>
+		private string NormalizeLineBreaks(string text, bool adjustPendingSelection = false)
+		{
+			if (!AcceptsReturn)
+			{
+				return GetFirstLine(text);
+			}
+
+#if __SKIA__
+			// On UIKit targets we use an invisible overlay, and replacing line breaks would break the sync between the native input
+			// and the managed text.
+			if (_isSkiaTextBox)
+			{
+				return RemoveLF(text, adjustPendingSelection);
+			}
+#else
+			_ = adjustPendingSelection; // only the Skia TextBox has a pending selection
+#endif
+
+			return text;
+		}
+
+		/// <summary>
+		/// Whether <paramref name="newText"/> is <paramref name="oldText"/> with one contiguous range deleted.
+		/// </summary>
+		private static bool IsDeletionOnly(string oldText, string newText)
+		{
+			if (newText.Length >= oldText.Length)
+			{
+				return false;
+			}
+
+			var prefixLength = oldText.AsSpan().CommonPrefixLength(newText);
+			return oldText.AsSpan(prefixLength).EndsWith(newText.AsSpan(prefixLength));
+		}
+
+		/// <summary>
+		/// Fills the text from an autofill service. Like Android's own text fields, it cuts the value to MaxLength, and the value
+		/// goes in as user input.
+		/// </summary>
+		internal void ApplyAutofill(string value)
+		{
+			if (IsReadOnly || !IsEnabled)
+			{
+				return;
+			}
+
+			if (MaxLength > 0)
+			{
+				value = TruncateToUtf16Limit(value, MaxLength);
+			}
+
+#if __SKIA__
+			_pendingSelection = (value.Length, 0);
+#endif
+			ProcessTextInput(value);
+		}
+
+		/// <summary>
+		/// Returns at most <paramref name="maxLength"/> UTF-16 code units of <paramref name="text"/>, leaving out whole a surrogate
+		/// pair that doesn't fit: half of one isn't text.
+		/// </summary>
+		private static string TruncateToUtf16Limit(string text, int maxLength)
+		{
+			if (maxLength <= 0)
+			{
+				return string.Empty;
+			}
+
+			if (text.Length <= maxLength)
+			{
+				return text;
+			}
+
+			return text[..(char.IsSurrogatePair(text[maxLength - 1], text[maxLength]) ? maxLength - 1 : maxLength)];
 		}
 
 		private void DeleteButtonClick()

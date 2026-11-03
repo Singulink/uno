@@ -242,7 +242,18 @@ internal sealed class MacOSAccessibility : SkiaAccessibilityBase
 				if (peer?.GetPattern(PatternInterface.Value) is IValueProvider valueProvider &&
 					!valueProvider.IsReadOnly)
 				{
-					valueProvider.SetValue(value);
+					try
+					{
+						valueProvider.SetValue(value);
+					}
+					catch (InvalidOperationException) when (owner is TextBox)
+					{
+						// Refused like WinUI's UI Automation refuses a value longer than MaxLength: show the TextBox's value again.
+						if (valueProvider.Value is { } current)
+						{
+							NativeUno.uno_accessibility_update_value(handle, current);
+						}
+					}
 				}
 			}
 		}

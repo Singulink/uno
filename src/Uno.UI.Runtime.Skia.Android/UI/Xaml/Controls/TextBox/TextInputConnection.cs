@@ -190,8 +190,13 @@ class TextInputConnection : BaseInputConnection
 
 			if (ActiveTextBox is not null)
 			{
-				ActiveTextBox.ProcessTextInput(_editable?.ToString() ?? string.Empty);
-				ActiveTextBox.Select(selectionStart, selectionEnd - selectionStart);
+				ActiveTextBox.ProcessTextInput(_editable?.ToString() ?? string.Empty, out var applied);
+
+				// The native caret belongs to the native text, so a refused edit keeps the TextBox's own selection.
+				if (applied)
+				{
+					ActiveTextBox.Select(selectionStart, selectionEnd - selectionStart);
+				}
 			}
 
 			_endingBatch = false;
