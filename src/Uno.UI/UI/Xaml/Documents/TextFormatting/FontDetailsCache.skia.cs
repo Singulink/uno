@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -35,6 +36,9 @@ internal static class FontDetailsCache
 
 	private static readonly Dictionary<FontEntry, Task<SKTypeface?>> _fontCache = new();
 	private static readonly object _fontCacheGate = new();
+	// The installed families don't change during a session, and the lookup can scan them all (fontconfig), so each
+	// name is checked once rather than once per requested style. Ordinal, because the platform lookups may not ignore case.
+	private static readonly ConcurrentDictionary<string, bool> _familyExists = new(StringComparer.Ordinal);
 	private static readonly IFontFallbackService? _fontFallbackService =
 		FeatureConfiguration.Font.FallbackService
 		?? (ApiExtensibility.CreateInstance<IFontFallbackService>(typeof(FontDetailsCache), out var service) ? service : null);
@@ -114,9 +118,32 @@ internal static class FontDetailsCache
 			}
 		}
 
+		// FromFamilyName substitutes the font manager's default typeface for an unknown family rather than
+		// failing (on WASM that is Skia's embedded monospace font), so ask the font manager first.
 		// FromFontFamilyName may return null: https://github.com/mono/SkiaSharp/issues/1058
-		return fallbackTypeface ?? SKTypeface.FromFamilyName(name, skWeight, skWidth, skSlant);
+		// The default family may be one the platform doesn't have (Segoe UI outside Windows): Skia's default typeface
+		// then stands in for it, rather than the default text font being reported as failing to load.
+		return fallbackTypeface
+			?? (FamilyExists(name) ? SKTypeface.FromFamilyName(name, skWeight, skWidth, skSlant) : null)
+			?? (string.Equals(name, FeatureConfiguration.Font.DefaultTextFontFamily, StringComparison.OrdinalIgnoreCase)
+				? SKTypeface.FromFamilyName(null, skWeight, skWidth, skSlant) ?? SKTypeface.FromFamilyName(null)
+				: null);
 	}
+
+	private static bool FamilyExists(string familyName)
+		=> _familyExists.GetOrAdd(familyName, static name =>
+		{
+			// CoreText's FromFamilyName maps these CSS generic names to Helvetica, Times and Courier, but its family
+			// lookup doesn't (map_css_names in SkFontMgr_mac_ct.cpp), so they count as present there.
+			if ((OperatingSystem.IsMacOS() || OperatingSystem.IsIOS() || OperatingSystem.IsTvOS() || OperatingSystem.IsMacCatalyst())
+				&& name is "sans-serif" or "serif" or "monospace")
+			{
+				return true;
+			}
+
+			using var styles = SKFontManager.Default.GetFontStyles(name);
+			return styles is { Count: > 0 };
+		});
 
 	private static readonly Func<string?, float, FontWeight, FontStretch, FontStyle, (FontDetails details, Task<FontDetails> loadedTask)> _getFont = FuncMemoizeExtensions.AsLockedMemoized((
 		string? name,
@@ -145,6 +172,7 @@ internal static class FontDetailsCache
 
 		var canChange = !typefaceTask.IsCompleted; // don't read from task.IsCompleted again, it could've changed
 		var typeface = !canChange ? typefaceTask.Result : null;
+		Task<SKTypeface?>? defaultTypefaceTask = null;
 
 		if (typeface == null)
 		{
@@ -160,7 +188,11 @@ internal static class FontDetailsCache
 				}
 			}
 
-			typeface = SKTypeface.FromFamilyName(FeatureConfiguration.Font.DefaultTextFontFamily, skWeight, skWidth, skSlant)
+			// The default text font is often a URI-backed font that only the loader resolves: FromFamilyName finds nothing
+			// and this would end on Skia's default typeface (its embedded monospace font on WASM).
+			defaultTypefaceTask = GetDefaultTypefaceTask(name, weight, stretch, style);
+			typeface = (defaultTypefaceTask is { IsCompletedSuccessfully: true } ? defaultTypefaceTask.Result : null)
+						?? SKTypeface.FromFamilyName(FeatureConfiguration.Font.DefaultTextFontFamily, skWeight, skWidth, skSlant)
 						?? SKTypeface.FromFamilyName(null, skWeight, skWidth, skSlant)
 						?? SKTypeface.FromFamilyName(null);
 		}
@@ -183,6 +215,18 @@ internal static class FontDetailsCache
 				exception = e;
 			}
 
+			if (loadedTypeface is null && defaultTypefaceTask is not null)
+			{
+				try
+				{
+					loadedTypeface = await defaultTypefaceTask;
+				}
+				catch (Exception e)
+				{
+					exception ??= e;
+				}
+			}
+
 			if (loadedTypeface is null)
 			{
 				if (typeof(FontDetailsCache).Log().IsEnabled(LogLevel.Error))
@@ -198,6 +242,30 @@ internal static class FontDetailsCache
 			}
 		}
 	});
+
+	/// <summary>
+	/// Resolves the default text font for a family that could not be resolved, or returns null when the family is
+	/// the default text font itself.
+	/// </summary>
+	private static Task<SKTypeface?>? GetDefaultTypefaceTask(string name, FontWeight weight, FontStretch stretch, FontStyle style)
+	{
+		var defaultName = FeatureConfiguration.Font.DefaultTextFontFamily;
+		if (string.IsNullOrEmpty(defaultName) || string.Equals(name, defaultName, StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		var key = new FontEntry(defaultName, weight.ToSkiaWeight(), stretch.ToSkiaWidth(), style.ToSkiaSlant());
+		lock (_fontCacheGate)
+		{
+			if (!_fontCache.TryGetValue(key, out var task))
+			{
+				_fontCache[key] = task = GetFontInternal(defaultName, weight, stretch, style);
+			}
+
+			return task;
+		}
+	}
 
 	public static (FontDetails details, Task<FontDetails> loadedTask) GetFont(
 		string? name,
