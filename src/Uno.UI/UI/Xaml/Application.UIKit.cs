@@ -180,9 +180,13 @@ namespace Microsoft.UI.Xaml
 			{
 				var cultureInfo = CultureInfo.CreateSpecificCulture(language);
 				CultureInfo.CurrentUICulture = cultureInfo;
-				CultureInfo.CurrentCulture = cultureInfo;
-				Thread.CurrentThread.CurrentCulture = cultureInfo;
 				Thread.CurrentThread.CurrentUICulture = cultureInfo;
+
+				// Fitted to the device's 12/24-hour setting, as ApplicationLanguages.ApplyCulture fits CurrentCulture and
+				// DefaultThreadCurrentCulture while CurrentCulture is still the runtime's own.
+				var formatCulture = DeviceClock.FitToClock(cultureInfo);
+				CultureInfo.CurrentCulture = formatCulture;
+				Thread.CurrentThread.CurrentCulture = formatCulture;
 			}
 			catch (Exception ex)
 			{
