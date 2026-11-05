@@ -36,6 +36,8 @@ internal partial class FlyoutBasePopupPanel : PopupPanel
 
 	protected override int PopupPlacementTargetMargin => 5;
 
+	protected override bool AllowChildResizing => _flyout.AllowPresenterResizing;
+
 	private protected override void OnPointerPressedDismissed(PointerRoutedEventArgs args)
 	{
 		if (this.Log().IsEnabled(LogLevel.Debug)) this.Log().Debug($"{this.GetDebugName()} Dismissing flyout (OverlayInputPassThroughElement:{Flyout.OverlayInputPassThroughElement.GetDebugIdentifier()}).");

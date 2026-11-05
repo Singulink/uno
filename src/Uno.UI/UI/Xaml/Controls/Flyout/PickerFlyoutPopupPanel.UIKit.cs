@@ -12,6 +12,9 @@ namespace Microsoft.UI.Xaml.Controls
 		{
 		}
 
+		// The picker is placed at the bottom of the screen rather than next to its target, so it is never resized to fit next to it.
+		protected override bool AllowChildResizing => false;
+
 		protected override Rect CalculatePopupPlacement(Popup popup, Size desiredSize, Size maxSize)
 		{
 			// A picker is often displayed at the bottom of the screen [...]

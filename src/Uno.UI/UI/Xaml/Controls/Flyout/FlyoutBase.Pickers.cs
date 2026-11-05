@@ -93,8 +93,11 @@ namespace Microsoft.UI.Xaml.Controls.Primitives
 			//return S_OK;
 		}
 
-		internal void DisablePresenterResizing()
-		{
-		}
+		/// <summary>
+		/// Gets whether the presenter is resized to the space next to the placement target when the flyout fits on no side of it.
+		/// </summary>
+		internal bool AllowPresenterResizing { get; private set; } = true;
+
+		internal void DisablePresenterResizing() => AllowPresenterResizing = false;
 	}
 }

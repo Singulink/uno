@@ -13,7 +13,6 @@ using Microsoft.UI.Xaml.Media;
 using Uno.UI.DataBinding;
 using Uno.Foundation.Logging;
 using Microsoft.UI.Xaml.Input;
-using Uno.Helpers;
 using Uno.UI.Xaml.Core;
 
 #if __APPLE_UIKIT__
@@ -69,9 +68,18 @@ internal partial class PopupPanel : Panel
 			return availableSize;
 		}
 
-		if (!isOpen || Popup.CustomLayouter == null)
+		if (!isOpen)
 		{
 			_lastMeasuredSize = MeasureElement(child, availableSize);
+		}
+		else if (Popup.CustomLayouter == null)
+		{
+#if __ANDROID__ || __APPLE_UIKIT__
+			// Native children that are not UIElements are measured at the available size, as before.
+			_lastMeasuredSize = child is UIElement placedChild ? MeasurePlacedChild(placedChild, availableSize) : MeasureElement(child, availableSize);
+#else
+			_lastMeasuredSize = MeasurePlacedChild(child, availableSize);
+#endif
 		}
 		else
 		{
@@ -124,60 +132,13 @@ internal partial class PopupPanel : Panel
 		}
 		else if (Popup.CustomLayouter == null)
 		{
-			// Gets the location of the popup (or its Anchor) in the VisualTree, so we will align Top/Left with it
-			// Note: we do not prevent overflow of the popup on any side as UWP does not!
-			//		 (And actually it also lets the view appear out of the window ...)
-			Point anchorLocation = default;
-			if (Popup.PlacementTarget is { } anchor)
-			{
-				anchorLocation = anchor.TransformToVisual(this).TransformPoint(default);
-			}
-			else
-			{
-				anchorLocation = Popup.TransformToVisual(null).TransformPoint(default);
-			}
-
-#if __ANDROID__
-			// for android, the above line returns the absolute coordinates of anchor on the screen
-			// because the parent view of this PopupPanel is a PopupWindow and GetLocationInWindow will be (0,0)
-			// therefore, we need to make the relative adjustment
-			if (this.NativeVisualParent is AView view)
-			{
-				var windowLocation = Point.From(view.GetLocationInWindow);
-				var screenLocation = Point.From(view.GetLocationOnScreen);
-
-				if (windowLocation == default)
-				{
-					anchorLocation -= ViewHelper.PhysicalToLogicalPixels(screenLocation);
-				}
-			}
-#endif
-
-			var finalFrame = new Rect(
-				anchorLocation.X + (float)Popup.HorizontalOffset,
-				anchorLocation.Y + (float)Popup.VerticalOffset,
-				size.Width,
-				size.Height);
-
-			// TODO: For now, the layouting logic for managed DatePickerFlyout or TimePickerFlyout does not correctly work
-			// against the placement target approach.
-			var isFlyoutManagedDatePicker =
-				(Popup.AssociatedFlyout is DatePickerFlyout || Popup.AssociatedFlyout is TimePickerFlyout)
-#if __ANDROID__ || __IOS__
-				&& (Popup.AssociatedFlyout is not NativeDatePickerFlyout && Popup.AssociatedFlyout is not NativeTimePickerFlyout)
-#endif
-				;
-
-			if ((!isFlyoutManagedDatePicker
-#if __ANDROID__ || __APPLE_UIKIT__
-				 || NativeAnchor is not null
-#endif
-				 || !MathHelpers.DoesRectContainRect(GetVisibleBounds(), finalFrame) // if the finalFrame spills out of the window, always use PlacementArrangeOverride
-				) && Popup.PlacementTarget is not null
-			   )
+			if (IsPlacedNextToTarget(size))
 			{
 				return PlacementArrangeOverride(Popup, finalSize);
 			}
+
+			var anchorLocation = GetPopupLocation();
+			var finalFrame = GetOffsetFrame(anchorLocation, size);
 
 			ArrangeElement(child, finalFrame);
 
@@ -185,11 +146,7 @@ internal partial class PopupPanel : Panel
 			// MenuFlyout so, for now, we restrict to to only Android
 			// This can be re-evaluated and removed after https://github.com/unoplatform/uno/pull/18261 merges
 #if !__APPLE_UIKIT__
-			var updatedFinalFrame = new Rect(
-				anchorLocation.X + (float)Popup.HorizontalOffset,
-				anchorLocation.Y + (float)Popup.VerticalOffset,
-				size.Width,
-				size.Height);
+			var updatedFinalFrame = GetOffsetFrame(anchorLocation, size);
 
 			if (updatedFinalFrame != finalFrame)
 			{
@@ -231,6 +188,53 @@ internal partial class PopupPanel : Panel
 
 		return finalSize;
 	}
+
+	/// <summary>
+	/// Gets the location of the popup (or its placement target), which a child that isn't placed next to the target is aligned with.
+	/// </summary>
+	private Point GetPopupLocation()
+	{
+		// Gets the location of the popup (or its Anchor) in the VisualTree, so we will align Top/Left with it
+		// Note: we do not prevent overflow of the popup on any side as UWP does not!
+		//		 (And actually it also lets the view appear out of the window ...)
+		Point anchorLocation = default;
+		if (Popup.PlacementTarget is { } anchor)
+		{
+			anchorLocation = anchor.TransformToVisual(this).TransformPoint(default);
+		}
+		else
+		{
+			anchorLocation = Popup.TransformToVisual(null).TransformPoint(default);
+		}
+
+#if __ANDROID__
+		// for android, the above line returns the absolute coordinates of anchor on the screen
+		// because the parent view of this PopupPanel is a PopupWindow and GetLocationInWindow will be (0,0)
+		// therefore, we need to make the relative adjustment
+		if (this.NativeVisualParent is AView view)
+		{
+			var windowLocation = Point.From(view.GetLocationInWindow);
+			var screenLocation = Point.From(view.GetLocationOnScreen);
+
+			if (windowLocation == default)
+			{
+				anchorLocation -= ViewHelper.PhysicalToLogicalPixels(screenLocation);
+			}
+		}
+#endif
+
+		return anchorLocation;
+	}
+
+	/// <summary>
+	/// Gets the frame of a child of the given size placed at the popup's offsets from the given popup location.
+	/// </summary>
+	private Rect GetOffsetFrame(Point anchorLocation, Size size)
+		=> new Rect(
+			anchorLocation.X + (float)Popup.HorizontalOffset,
+			anchorLocation.Y + (float)Popup.VerticalOffset,
+			size.Width,
+			size.Height);
 
 	private protected override void OnLoaded()
 	{
