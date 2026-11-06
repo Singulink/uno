@@ -17,11 +17,12 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls;
 
 /// <summary>
 /// By default the soft keyboard of iOS only comes up for an input that is focused while the user is interacting
-/// with the page. These tests make the hidden native input's bridge take the browser for an iOS one.
+/// with the page. These tests make the runtime take the browser for an iOS one.
 /// </summary>
 public partial class Given_TextBox
 {
 	private const string HiddenInputBridge = "globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension";
+	private const string RuntimeInputHelper = "globalThis.Uno.UI.Runtime.Skia.BrowserInputHelper";
 
 	// Past the delay within which the gesture recognizer takes a second tap for a double tap (see Tap).
 	private static readonly TimeSpan MultiTapDelay = TimeSpan.FromMicroseconds(GestureRecognizer.MultiTapMaxDelayMicroseconds) + TimeSpan.FromMilliseconds(100);
@@ -173,21 +174,32 @@ public partial class Given_TextBox
 		Assert.IsTrue(IsHiddenInputFocused(), "The hidden native input should be focused for the focused control.");
 	}
 
-	// Makes the hidden input's bridge take the browser for an iOS one, or not, and the pointer for the kind a tap or
-	// a click on the page would have it be: injected input raises no DOM event.
+	// Makes the runtime take the browser for an iOS one, or not, and the hidden input's bridge take the pointer for the
+	// kind a tap or a click on the page would have it be: injected input raises no DOM event. The input is detached, so
+	// the next focus creates it where that platform has it: off-screen on iOS (see keepsInputOffscreen).
 	private static IDisposable SimulateIOS(bool isIOS, string pointerType = "touch")
 	{
 		InvokeBrowserJs($$"""
 			(function() {
 				const bridge = {{HiddenInputBridge}};
+				const helper = {{RuntimeInputHelper}};
 				bridge.detach();
-				window.__unoBridge ??= { isIOS: bridge.isIOS, lastPointerType: bridge.lastPointerType, swallowNextCanvasClick: bridge.swallowNextCanvasClick };
-				bridge.isIOS = {{(isIOS ? "true" : "false")}};
+				window.__unoBridge ??= { lastPointerType: bridge.lastPointerType, swallowNextCanvasClick: bridge.swallowNextCanvasClick };
+				window.__unoInputHelper ??= { isIOS: helper.isIOS };
+				helper.isIOS = {{(isIOS ? "true" : "false")}};
 				bridge.lastPointerType = '{{pointerType}}';
 				return '';
 			})()
 			""");
-		return Disposable.Create(() => InvokeBrowserJs($"(function(){{ const bridge = {HiddenInputBridge}; bridge.detach(); Object.assign(bridge, window.__unoBridge); return ''; }})()"));
+		return Disposable.Create(() => InvokeBrowserJs($$"""
+			(function() {
+				const bridge = {{HiddenInputBridge}};
+				bridge.detach();
+				Object.assign(bridge, window.__unoBridge);
+				Object.assign({{RuntimeInputHelper}}, window.__unoInputHelper);
+				return '';
+			})()
+			"""));
 	}
 
 	// Counts the calls that blur or focus the hidden input until disposed. Calls rather than events: a tab in the
