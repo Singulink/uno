@@ -734,7 +734,7 @@
 		// is showing for, or when no user gesture is in progress.
 		public static refocus() {
 			const input = BrowserInvisibleTextBoxViewExtension.inputElement;
-			if (!BrowserInvisibleTextBoxViewExtension.isIOS || input == null || document.activeElement !== input) {
+			if (!BrowserInputHelper.isIOS || input == null || document.activeElement !== input) {
 				return;
 			}
 
