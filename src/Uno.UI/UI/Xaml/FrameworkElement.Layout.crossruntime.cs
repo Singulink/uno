@@ -921,12 +921,14 @@ namespace Microsoft.UI.Xaml
 				// if we have difference between child and parent FlowDirection
 				// then we have to change origin of Clipping rectangle
 				// which allows us to visually keep it at the same place
-				// UNO TODO
-				//pParent = GetUIElementAdjustedParentInternal(FALSE /*fPublicParentsOnly*/);
-				//if (pParent && pParent->IsRightToLeft() != IsRightToLeft())
-				//{
-				//	clipRect.X = RenderSize.width - (clipRect.X + clipRect.Width);
-				//}
+#if SUPPORTS_RTL
+				// Uno: the visual's flow direction flip is the parent/child test, but a right-to-left TextBlock carries the flip
+				// in the opposite case (WinUI un-mirrors text in its text drawing context). Rect.Empty would turn into NaN.
+				if (!clipRect.IsEmpty && !GetFlowDirectionTransform().IsIdentity)
+				{
+					clipRect.X = RenderSize.Width - (clipRect.X + clipRect.Width);
+				}
+#endif
 
 				if (needToClipSlot || needToClipLocally)
 				{
