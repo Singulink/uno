@@ -1242,12 +1242,9 @@ namespace Microsoft.UI.Xaml.Controls.Primitives
 			horizontalOffset = m_targetPoint.X;
 			verticalOffset = m_targetPoint.Y;
 
-			// Uno: unlike WinUI, which computes positioned flyouts in a coordinate space that is mirrored for right-to-left, the target
-			// point and the presenter rect are in left-to-right window coordinates here. Right-to-left is accounted for by reversing the
-			// horizontal placements and by opening menus towards the left of their point.
 			FlowDirection flowDirection = _popup.FlowDirection;
 			bool isRightToLeft = flowDirection is FlowDirection.RightToLeft;
-			FlyoutPlacementMode placementMode = GetEffectivePlacement(flowDirection);
+			FlyoutPlacementMode placementMode = EffectivePlacement;
 
 			// We want to preserve existing MenuFlyout behavior - it will continue to ignore the Placement property.
 			// We also don't want to adjust anything if we've been positioned for a DatePicker or TimePicker -
@@ -1291,9 +1288,11 @@ namespace Microsoft.UI.Xaml.Controls.Primitives
 				}
 			}
 
-			if (isMenuFlyout && isRightToLeft)
+			if (isRightToLeft && !m_isPositionedForDateTimePicker)
 			{
-				// In right-to-left the point is the trailing (right) edge of a menu, which opens towards the left.
+				// Uno: WinUI positions a right-to-left popup by its top-right corner, so the offset computed above (with the placement
+				// not mirrored) is the presenter's right edge there. Uno works in left-to-right window coordinates, so convert it to the
+				// left edge. A menu thus opens towards the left of its point.
 				horizontalOffset -= presenterSize.Width;
 			}
 
@@ -1470,12 +1469,12 @@ namespace Microsoft.UI.Xaml.Controls.Primitives
 						horizontalOffset = availableWindowRect.X + availableWindowRect.Width - presenterSize.Width;
 					}
 				}
-				else if (horizontalOffset < availableWindowRect.X)
+				else if (isRightToLeft && horizontalOffset < availableWindowRect.X)
 				{
 					if (m_isPositionedAtPoint)
 					{
-						// Open towards the other side of the point when the presenter does not fit on this side (e.g. a right-to-left menu
-						// opened close to the left edge of the window).
+						// Like WinUI, only right-to-left opens towards the other side of the point when the presenter doesn't fit on the
+						// left (e.g. a menu opened close to the left edge of the window). Left-to-right is clamped below.
 						var roomAfterPresenter = availableWindowRect.X + availableWindowRect.Width - (horizontalOffset + presenterSize.Width);
 						horizontalOffset += Math.Min(presenterSize.Width, roomAfterPresenter);
 					}
