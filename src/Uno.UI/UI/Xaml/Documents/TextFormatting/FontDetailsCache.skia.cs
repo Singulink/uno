@@ -215,6 +215,10 @@ internal static class FontDetailsCache
 				exception = e;
 			}
 
+			// A family name the platform doesn't have quietly gets the default text font, but a font that threw or a
+			// font file that didn't load is still reported.
+			var isReported = loadedTypeface is null && (exception is not null || Uri.TryCreate(key.Name, UriKind.Absolute, out _));
+
 			if (loadedTypeface is null && defaultTypefaceTask is not null)
 			{
 				try
@@ -227,13 +231,13 @@ internal static class FontDetailsCache
 				}
 			}
 
+			if ((loadedTypeface is null || isReported) && typeof(FontDetailsCache).Log().IsEnabled(LogLevel.Error))
+			{
+				typeof(FontDetailsCache).Log().LogError($"Failed to load {key}", exception);
+			}
+
 			if (loadedTypeface is null)
 			{
-				if (typeof(FontDetailsCache).Log().IsEnabled(LogLevel.Error))
-				{
-					typeof(FontDetailsCache).Log().LogError($"Failed to load {key}", exception);
-				}
-
 				return details;
 			}
 			else
