@@ -236,7 +236,7 @@ partial class Given_UIElement
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
-	public async Task SingleParentNonFE_Parent_Collected_Then_Next_Parent_Counts_As_Second()
+	public async Task SingleParentNonFE_Parent_Collected_Then_Next_Parent_Starts_Clean()
 	{
 		var brush = new SolidColorBrush(Colors.SkyBlue);
 		BindingOperations.SetBinding(brush, SolidColorBrush.ColorProperty, new Binding { Path = new("Color") });
@@ -248,20 +248,21 @@ partial class Given_UIElement
 
 		Assert.IsTrue(await TestHelper.TryWaitUntilCollected(firstOwnerRef), "Pre-condition: the first owner must be collectible while the brush is alive");
 
-		// A second owner with no DataContext. It already has a local Background, so the assignment is a
-		// same-precedence replacement: nothing but the association itself touches the brush's inherited DataContext.
+		// A new single owner with no DataContext. It already has a local Background, so the assignment is a
+		// same-precedence replacement: nothing but the (re-)association itself touches the brush's inherited
+		// DataContext, which must start clean as a freshly created brush would.
 		var secondOwner = new Border { Background = new SolidColorBrush(Colors.Yellow) };
 		secondOwner.Background = brush;
 		Assert.AreNotEqual(Colors.Red, brush.Color, "1. a dead parent's DataContext must not survive re-association");
 		Assert.AreEqual((Windows.UI.Color)SolidColorBrush.ColorProperty.GetMetadata(typeof(SolidColorBrush)).DefaultValue, brush.Color, "1. with no DataContext the bound property falls back to its default");
 
-		// The collected parent still counts: the brush has had two parents, so inheritance is off for good, exactly as
-		// when the first parent is still alive (MultiParentNonFE_*). The outcome must not depend on GC timing.
-		// Known WinUI divergence: a destroyed WinUI parent removes itself from its values (ReleaseImpl ->
-		// ResetReferencesFromChildren -> RemoveParent), so the next consumer is a single parent again. Uno has no such
-		// hook, so a collected parent keeps counting; only an explicit removal or the ALC sweep frees the slot.
+		// The dead parent does not count as a second parent: inheritance still works for the new single owner.
 		secondOwner.DataContext = new { Color = Colors.Green };
-		Assert.AreNotEqual(Colors.Green, brush.Color, "2. once it has been attached to multiple \"parent\", dc should no longer propagate");
+		Assert.AreEqual(Colors.Green, brush.Color, "2. the new single parent's DataContext propagates");
+
+		// Once the new owner lets go, the brush has no parent left and drops the DataContext it received from it.
+		secondOwner.Background = new SolidColorBrush(Colors.Yellow);
+		Assert.AreEqual((Windows.UI.Color)SolidColorBrush.ColorProperty.GetMetadata(typeof(SolidColorBrush)).DefaultValue, brush.Color, "3. the released brush must not keep the last owner's DataContext");
 
 		GC.KeepAlive(firstDataContext);
 	}

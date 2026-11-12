@@ -711,8 +711,20 @@ namespace Microsoft.UI.Xaml
 			//		two parents.
 			// todo: if we are to implement that in the future, we should promote `_associatedParentRef` into a `List/HashSet<ManagedWeakReference>? _associatedParentRefs`
 
-			if (_associatedParentRef is null)
+			// A collected previous parent counts as no parent: it can no longer share this instance.
+			if (AssociatedParent is null)
 			{
+				if (_associatedParentRef is not null)
+				{
+					// The previous parent was collected without unassociating. In WinUI a destroyed parent removes itself
+					// (CDependencyObject::ReleaseImpl -> ResetReferencesFromChildren), taking the inheritance context with it,
+					// so drop the DataContext it pushed here. Leave a value with its own parent alone: it inherits from there.
+					if (Parent is not { } ownParent || ReferenceEquals(ownParent, parent))
+					{
+						ClearInheritedDataContext();
+					}
+				}
+
 				SetAssociatedParent(parent);
 				RegisterCollectibleParentAssociation(parent);
 			}
@@ -721,9 +733,6 @@ namespace Microsoft.UI.Xaml
 				// if there are multiple parents (would be if we count the previous one `_associatedParentRef` and the current one `parent`),
 				// it means that the current instance is shared across multiple owners/parents,
 				// which means that it should no longer participate in any dc propagation.
-				// A previous parent that was collected without unassociating still counts, so the outcome does not depend
-				// on whether a collection happened in between: WinUI frees the slot deterministically when the parent is
-				// destroyed, which has no equivalent here; only an explicit unassociation or the ALC sweep frees it.
 				_inheritanceContextEnabled = false;
 
 				ClearInheritedDataContext();
