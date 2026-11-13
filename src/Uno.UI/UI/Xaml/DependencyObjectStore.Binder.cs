@@ -718,8 +718,13 @@ namespace Microsoft.UI.Xaml
 				{
 					// The previous parent was collected without unassociating. In WinUI a destroyed parent removes itself
 					// (CDependencyObject::ReleaseImpl -> ResetReferencesFromChildren), taking the inheritance context with it,
-					// so drop the DataContext it pushed here. Leave a value with its own parent alone: it inherits from there.
-					if (Parent is not { } ownParent || ReferenceEquals(ownParent, parent))
+					// so drop the DataContext it pushed here. Keep the new owner's if the assignment already pushed it (a
+					// precedence change does), and leave a value with its own parent alone, like ApplyChildrenBindable.
+					var parentDataContext = parent is IDependencyObjectStoreProvider { Store: var parentStore }
+						? parentStore.GetValue(parentStore._dataContextProperty)
+						: null;
+					if ((Parent is not { } ownParent || ReferenceEquals(ownParent, parent))
+						&& !ReferenceEquals(GetValue(_dataContextProperty), parentDataContext))
 					{
 						ClearInheritedDataContext();
 					}

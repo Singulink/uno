@@ -269,6 +269,55 @@ partial class Given_UIElement
 
 	[TestMethod]
 	[RunsOnUIThread]
+	[DataRow(true)]
+	[DataRow(false)]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
+	public async Task SingleParentNonFE_Parent_Collected_Then_Next_Parent_Gets_What_A_New_Value_Gets(bool samePrecedence)
+	{
+		// The new owner has a DataContext. Whatever an assignment gives a brush that was never used (the owner's
+		// DataContext when it changes the precedence of the owner's Background, nothing on a same-precedence
+		// replacement), a brush whose first owner was collected must end up with the same, never with the dead
+		// owner's DataContext.
+		var brush = new SolidColorBrush(Colors.SkyBlue);
+		BindingOperations.SetBinding(brush, SolidColorBrush.ColorProperty, new Binding { Path = new("Color") });
+
+		var firstDataContext = new { Color = Colors.Red };
+		var firstOwnerRef = AttachToOwner(brush, firstDataContext);
+		Assert.AreEqual(Colors.Red, brush.Color, "0. a single parent propagates its DataContext");
+
+		Assert.IsTrue(await TestHelper.TryWaitUntilCollected(firstOwnerRef), "Pre-condition: the first owner must be collectible while the brush is alive");
+
+		var newBrush = new SolidColorBrush(Colors.SkyBlue);
+		BindingOperations.SetBinding(newBrush, SolidColorBrush.ColorProperty, new Binding { Path = new("Color") });
+
+		var secondDataContext = new { Color = Colors.Green };
+		var secondOwner = AssignToOwner(brush, secondDataContext, samePrecedence);
+		var newBrushOwner = AssignToOwner(newBrush, secondDataContext, samePrecedence);
+
+		Assert.AreNotEqual(Colors.Red, brush.Color, "1. a dead parent's DataContext must not survive re-association");
+		Assert.AreEqual(samePrecedence ? (Windows.UI.Color)SolidColorBrush.ColorProperty.GetMetadata(typeof(SolidColorBrush)).DefaultValue : Colors.Green, newBrush.Color, "Pre-condition: what a new brush gets");
+		Assert.AreEqual(newBrush.Color, brush.Color, "1. the reused brush gets what a new brush gets");
+
+		GC.KeepAlive(firstDataContext);
+		GC.KeepAlive(secondOwner);
+		GC.KeepAlive(newBrushOwner);
+
+		static Border AssignToOwner(Brush value, object dataContext, bool samePrecedence)
+		{
+			var owner = new Border { DataContext = dataContext };
+			if (samePrecedence)
+			{
+				owner.Background = new SolidColorBrush(Colors.Yellow);
+			}
+
+			owner.Background = value;
+			return owner;
+		}
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
 	public void SingleParentNonFE_Parent_Removes_Value_Then_Next_Parent_Starts_Clean()
