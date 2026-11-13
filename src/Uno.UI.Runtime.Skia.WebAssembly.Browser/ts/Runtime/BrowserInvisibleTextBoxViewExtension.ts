@@ -97,7 +97,7 @@
 
 				document.onselectionchange = () => {
 					let input = document.activeElement;
-					if (input instanceof HTMLInputElement) {
+					if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
 						BrowserInvisibleTextBoxViewExtension.isInSelectionChange = true;
 						try {
 							const restoresSelection = BrowserInvisibleTextBoxViewExtension.waitingAsyncOnSelectionChange
