@@ -190,12 +190,19 @@ class TextInputConnection : BaseInputConnection
 
 			if (ActiveTextBox is not null)
 			{
-				ActiveTextBox.ProcessTextInput(_editable?.ToString() ?? string.Empty, out var applied);
+				var nativeText = _editable?.ToString() ?? string.Empty;
 
-				// The native caret belongs to the native text, so a refused edit keeps the TextBox's own selection.
-				if (applied)
+				// Also raises the TextCompositionChanged the TextBox held back until this text is in Text.
+				ActiveTextBox.UpdateTextFromNative(nativeText, selectionStart, selectionEnd - selectionStart);
+
+				// The TextBox didn't keep the edit as the IME applied it (MaxLength, a TextChanging filter, BeforeTextChanging): as
+				// Android's own LengthFilter does, the editable takes the TextBox's text at once and the composition ends, so the
+				// keyboard builds its next keystrokes and suggestions on the text the TextBox kept.
+				if (_editable is not null
+					&& !string.Equals(ActiveTextBox.Text.Replace('\r', '\n'), nativeText, StringComparison.Ordinal))
 				{
-					ActiveTextBox.Select(selectionStart, selectionEnd - selectionStart);
+					_editable.SetComposingRange(-1, -1);
+					UpdateEditableSelectionAndText();
 				}
 			}
 

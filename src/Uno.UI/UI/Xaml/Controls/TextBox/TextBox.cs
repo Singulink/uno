@@ -131,6 +131,8 @@ namespace Microsoft.UI.Xaml.Controls
 		/// This flag is checked to avoid pushing a value to a two-way binding if no edits have occurred, per UWP's behavior.
 		/// </summary>
 		private bool _hasTextChangedThisFocusSession;
+		// Counts Text changes, so a platform edit the coercion rejected can be told from one a TextChanging handler put back.
+		private int _textChangeCount;
 
 		public TextBox()
 		{
@@ -369,6 +371,7 @@ namespace Microsoft.UI.Xaml.Controls
 		protected virtual void OnTextChanged(DependencyPropertyChangedEventArgs e)
 		{
 			_hasTextChangedThisFocusSession = true;
+			_textChangeCount++;
 
 			RaiseTextChanging();
 

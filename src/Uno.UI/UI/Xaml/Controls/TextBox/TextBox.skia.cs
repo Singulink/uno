@@ -71,6 +71,8 @@ public partial class TextBox : ITextSelectionGripperHost
 	private bool _currentlyTyping;
 	private bool _suppressCurrentlyTyping;
 	private bool _isApplyingNativeInput;
+
+	internal bool IsApplyingNativeInput => _isApplyingNativeInput;
 	private SelectionDetails _selectionWhenTypingStarted;
 	private string _textWhenTypingStarted;
 	// Whether the open typing run has changed the text; a run whose keys were all refused or cancelled is no undo step.
@@ -95,22 +97,39 @@ public partial class TextBox : ITextSelectionGripperHost
 
 	// An edit the platform's input field already applied, with the caret it left there. Like a key the TextBox handles,
 	// it extends the current typing run: its own caret move doesn't end the run, so undo takes back the whole of it.
-	internal void ApplyNativeInput(string text, int selectionStart, int selectionLength)
+	// Returns false when the TextBox rejected the edit (read-only, MaxLength, BeforeTextChanging) and kept its text without
+	// changing it in between.
+	internal bool ApplyNativeInput(string text, int selectionStart, int selectionLength)
 	{
+		var textChangesBefore = _textChangeCount;
+		var textBefore = Text;
+		var (selectionStartBefore, selectionLengthBefore) = (SelectionStart, SelectionLength);
+		bool refused;
 		_isApplyingNativeInput = true;
 		try
 		{
 			// Pending so the text change itself lands the caret here instead of passing through 0.
 			SetPendingSelection(selectionStart, selectionLength);
 
-			// The native caret belongs to the native text, so a refused edit keeps the TextBox's own selection.
-			if (TextBoxView.UpdateTextFromNative(text))
+			var applied = TextBoxView.UpdateTextFromNative(text);
+			refused = Text == textBefore && text != textBefore;
+			if (refused)
+			{
+				// The next text change mustn't land on the refused edit's caret.
+				_pendingSelection = null;
+
+				// Back where the edit started right away: the next key the browser applies lands at the input's caret. The
+				// input got the TextBox's text back, which moved its caret, so it gets the selection even when unchanged.
+				SelectInternal(selectionStartBefore, selectionLengthBefore);
+				TextBoxView.Select(SelectionStart, SelectionLength);
+			}
+			else if (applied)
 			{
 				SelectInternal(selectionStart, selectionLength);
 			}
 			else
 			{
-				// The next text change mustn't land on the refused edit's caret.
+				// The native caret belongs to the native text, so a refused edit keeps the TextBox's own selection.
 				_pendingSelection = null;
 			}
 		}
@@ -118,6 +137,10 @@ public partial class TextBox : ITextSelectionGripperHost
 		{
 			_isApplyingNativeInput = false;
 		}
+
+		OnPlatformTextSynced(refused);
+		// A TextChanging handler that changed the text and put it back (a filter, a length limit) is no rejection.
+		return !refused || _textChangeCount != textChangesBefore;
 	}
 
 	// The platform's input field already applied this edit. It is typing, undoable like a key the TextBox handles, and a
@@ -429,7 +452,11 @@ public partial class TextBox : ITextSelectionGripperHost
 		_clipboardChangeSubscription.Disposable = null;
 	}
 
-	partial void OnIsReadonlyChangedPartial() => UpdateCanPasteClipboardContent();
+	partial void OnIsReadonlyChangedPartial()
+	{
+		UpdateCanPasteClipboardContent();
+		TextBoxView?.UpdateProperties();
+	}
 
 	partial void OnForegroundColorChangedPartial(Brush newValue)
 	{

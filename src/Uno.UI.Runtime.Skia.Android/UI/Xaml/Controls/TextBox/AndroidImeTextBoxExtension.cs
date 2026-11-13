@@ -148,7 +148,7 @@ internal sealed class AndroidImeTextBoxExtension : IImeTextBoxExtension
 
 			if (!string.IsNullOrEmpty(composingText))
 			{
-				CompositionUpdated?.Invoke(this, new ImeCompositionEventArgs(composingText, textAlreadyApplied: true));
+				CompositionUpdated?.Invoke(this, new ImeCompositionEventArgs(composingText, textAlreadyApplied: true, compositionStart: composingStart));
 			}
 
 			if (this.Log().IsEnabled(LogLevel.Trace))
@@ -165,7 +165,7 @@ internal sealed class AndroidImeTextBoxExtension : IImeTextBoxExtension
 
 			if (!string.IsNullOrEmpty(composingText))
 			{
-				CompositionUpdated?.Invoke(this, new ImeCompositionEventArgs(composingText, textAlreadyApplied: true));
+				CompositionUpdated?.Invoke(this, new ImeCompositionEventArgs(composingText, textAlreadyApplied: true, compositionStart: composingStart));
 			}
 
 			if (this.Log().IsEnabled(LogLevel.Trace))

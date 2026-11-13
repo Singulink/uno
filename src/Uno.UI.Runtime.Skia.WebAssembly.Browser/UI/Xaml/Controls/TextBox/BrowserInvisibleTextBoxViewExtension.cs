@@ -16,6 +16,7 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 {
 	private readonly TextBoxView _view;
 	private bool _isNativeInputActive;
+	private bool _isNativeInputReadOnly;
 
 	public BrowserInvisibleTextBoxViewExtension(TextBoxView view)
 	{
@@ -54,7 +55,17 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 		{
 			// A multi-line TextBox's textarea breaks lines with \n where the TextBox uses \r: a text differing only
 			// by them is not an edit of the TextBox's own, which it would echo back and revert the caret for.
-			textBox.ApplyNativeInput(text.Replace('\n', '\r'), selectionStart, selectionLength);
+			var nativeText = text.Replace('\n', '\r');
+			textBox.ApplyNativeInput(nativeText, selectionStart, selectionLength);
+
+			// The TextBox didn't keep the edit as the input applied it (MaxLength, a TextChanging filter, BeforeTextChanging,
+			// read-only). As Android's own LengthFilter does, its text goes back to the input at once, which ends the
+			// composition, so the keyboard builds its next keystrokes and suggestions on the text the TextBox kept.
+			if (textBox.Text != nativeText && WasmImeTextBoxExtension.EndRefusedComposition())
+			{
+				// The input got the TextBox's text back, without its caret.
+				textBox.TextBoxView.Select(textBox.SelectionStart, textBox.SelectionLength);
+			}
 		}
 	});
 
@@ -134,13 +145,15 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 
 	public void StartEntry()
 	{
+		_isNativeInputReadOnly = GetIsReadOnly();
 		_isNativeInputActive = NativeMethods.Focus(
 			_view.TextBox?.Visual.Handle ?? 0,
 			_view.IsPasswordBox,
 			_view.TextBox?.Text,
 			_view.TextBox?.AcceptsReturn ?? false,
 			GetInputModeValue(),
-			GetEnterKeyHintValue());
+			GetEnterKeyHintValue(),
+			_isNativeInputReadOnly);
 
 		if (_isNativeInputActive)
 		{
@@ -276,11 +289,25 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 			// when this TextBox is the one in focus
 			return;
 		}
+		var isReadOnly = GetIsReadOnly();
+		if (_isNativeInputActive && isReadOnly != _isNativeInputReadOnly && !WasmImeTextBoxExtension.Instance.IsComposing)
+		{
+			// A browser shows or hides the soft keyboard when its input takes focus, not when readOnly flips on the focused
+			// one: the TextBox enters a new input, as on focus. During a composition, the input it is in stays.
+			StartEntry();
+			return;
+		}
 		if (GetEnterKeyHintValue() is { } enterKeyHintValue)
 		{
 			NativeMethods.SetEnterKeyHint(enterKeyHintValue);
 		}
+
+		NativeMethods.SetReadOnly(isReadOnly);
+		_isNativeInputReadOnly = isReadOnly;
 	}
+
+	// WinUI doesn't show the touch keyboard for a read-only TextBox.
+	private bool GetIsReadOnly() => _view.TextBox?.IsReadOnly ?? false;
 
 	public int GetSelectionStart() => 0;
 	public int GetSelectionLength() => 0;
@@ -316,7 +343,7 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 		public static partial void SetText(string text);
 
 		[JSImport("globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension.focus")]
-		public static partial bool Focus(IntPtr handle, bool isPassword, string? text, bool acceptsReturn, string inputMode, string enterKeyHint);
+		public static partial bool Focus(IntPtr handle, bool isPassword, string? text, bool acceptsReturn, string inputMode, string enterKeyHint, bool isReadOnly);
 
 		[JSImport("globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension.blur")]
 		public static partial void Blur(IntPtr handle);
@@ -341,6 +368,9 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 
 		[JSImport("globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension.setEnterKeyHint")]
 		public static partial void SetEnterKeyHint(string setEnterKeyHint);
+
+		[JSImport("globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension.setReadOnly")]
+		public static partial void SetReadOnly(bool isReadOnly);
 
 		[JSImport("globalThis.Uno.UI.Runtime.Skia.BrowserInvisibleTextBoxViewExtension.setInputMode")]
 		public static partial void SetInputMode(string inputMode);
