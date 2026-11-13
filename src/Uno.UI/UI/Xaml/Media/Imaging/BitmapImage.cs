@@ -28,6 +28,10 @@ namespace Microsoft.UI.Xaml.Media.Imaging
 
 		private void OnUriSourceChanged(DependencyPropertyChangedEventArgs e)
 		{
+#if __SKIA__
+			// Also for an equal Uri, which reloads the source (an app refreshing a snapshot), as Uri isn't compared by value.
+			_downloaded = null;
+#endif
 			if (!object.Equals(e.OldValue, e.NewValue))
 			{
 				UnloadImageData();
