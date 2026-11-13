@@ -256,6 +256,28 @@ namespace Microsoft.UI.Xaml.Controls
 
 		protected override void OnGotFocus(RoutedEventArgs e)
 		{
+#if __SKIA__
+			// From WinUI TextBoxBase::OnGotFocus:
+			// Verify that this textbox is still the focused element.
+			// This is to account for a scenario where a new element gains focus
+			// between focus manager queueing the GotFocus event and it being raised.
+			if (XamlRoot is { } xamlRoot)
+			{
+				// Only return if this TextBox is the original source of the OnGotFocus event.
+				// Other controls may directly call this OnGotFocus function and we do not want
+				// to block those calls.
+				if (ReferenceEquals(e.OriginalSource, this) && !ReferenceEquals(FocusManager.GetFocusedElement(xamlRoot), this))
+				{
+					if (this.Log().IsEnabled(LogLevel.Debug))
+					{
+						this.Log().LogDebug("GotFocus raised after the focus moved to another element, it is not brought into view.");
+					}
+
+					return;
+				}
+			}
+#endif
+
 			_forceFocusedVisualState = false;
 			StartBringIntoView(new BringIntoViewOptions
 			{
@@ -1096,7 +1118,18 @@ namespace Microsoft.UI.Xaml.Controls
 			base.OnPointerExited(e);
 			_isPointerOver = false;
 			UpdateVisualState();
+			OnPointerExitedPartial(e);
 		}
+
+		partial void OnPointerExitedPartial(PointerRoutedEventArgs e);
+
+		protected override void OnPointerCanceled(PointerRoutedEventArgs e)
+		{
+			base.OnPointerCanceled(e);
+			OnPointerCanceledPartial(e);
+		}
+
+		partial void OnPointerCanceledPartial(PointerRoutedEventArgs e);
 
 		protected override void OnPointerCaptureLost(PointerRoutedEventArgs e)
 		{
@@ -1136,7 +1169,7 @@ namespace Microsoft.UI.Xaml.Controls
 				if (wasFocused)
 				{
 					// See comment in OnPointerReleased for why we do this
-					_textBoxNotificationsSingleton?.OnFocused(this);
+					NotifyFocusedAgain();
 				}
 #endif
 			}
@@ -1180,7 +1213,7 @@ namespace Microsoft.UI.Xaml.Controls
 					// 3. User taps on TextBox again. In this case, we want to call UpdateFocusState so that the soft keyboard is re-shown again.
 					//
 					// This approach feels hacky though and may not handle programmatic focus properly, i.e, when programmatic focus is requested on an already-focused TextBox. This is a niche case though.
-					_textBoxNotificationsSingleton?.OnFocused(this);
+					NotifyFocusedAgain();
 				}
 #endif
 			}
@@ -1358,12 +1391,20 @@ namespace Microsoft.UI.Xaml.Controls
 		/// <param name="applied">Whether the edit went in: false when MaxLength or a BeforeTextChanging handler refused it.</param>
 		internal string ProcessTextInput(string newText, out bool applied, bool limitToMaxLength = true)
 		{
+#if __SKIA__
+			var isPlatformSync = _platformTextApplyInProgress && !_isInputModifyingText;
+#endif
+
 			if (limitToMaxLength && IsRefusedByMaxLength(newText))
 			{
+				applied = false;
 #if __SKIA__
 				_pendingSelection = null;
+				if (isPlatformSync)
+				{
+					OnPlatformSyncRefused();
+				}
 #endif
-				applied = false;
 				return Text;
 			}
 
@@ -1401,8 +1442,18 @@ namespace Microsoft.UI.Xaml.Controls
 					// The all to ProcessTextInput may be recursing, we only want to restore
 					// the state on the last one.
 					_isInputModifyingText = false;
+#if __SKIA__
+					_platformTextApplyInProgress = false;
+#endif
 				}
 			}
+
+#if __SKIA__
+			if (isPlatformSync && !applied)
+			{
+				OnPlatformSyncRefused();
+			}
+#endif
 
 			return Text; //This may have been modified by BeforeTextChanging, TextChanging, DP callback, etc
 		}

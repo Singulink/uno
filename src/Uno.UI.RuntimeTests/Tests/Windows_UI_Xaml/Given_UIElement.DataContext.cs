@@ -260,7 +260,8 @@ partial class Given_UIElement
 		secondOwner.DataContext = new { Color = Colors.Green };
 		Assert.AreEqual(Colors.Green, brush.Color, "2. the new single parent's DataContext propagates");
 
-		// Once the new owner lets go, the brush has no parent left and drops the DataContext it received from it.
+		// The dead parent's slot no longer counts as a holder: once the new owner lets go, the brush has no holder left
+		// and drops the DataContext it received from it.
 		secondOwner.Background = new SolidColorBrush(Colors.Yellow);
 		Assert.AreEqual((Windows.UI.Color)SolidColorBrush.ColorProperty.GetMetadata(typeof(SolidColorBrush)).DefaultValue, brush.Color, "3. the released brush must not keep the last owner's DataContext");
 
@@ -316,30 +317,12 @@ partial class Given_UIElement
 		}
 	}
 
-	[TestMethod]
-	[RunsOnUIThread]
-	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
-	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
-	public void SingleParentNonFE_Parent_Removes_Value_Then_Next_Parent_Starts_Clean()
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+	private static WeakReference AttachToOwner(Brush brush, object dataContext)
 	{
-		var brush = new SolidColorBrush(Colors.SkyBlue);
-		BindingOperations.SetBinding(brush, SolidColorBrush.ColorProperty, new Binding { Path = new("Color") });
-
-		var firstOwner = new Border { DataContext = new { Color = Colors.Red } };
-		firstOwner.Background = brush;
-		Assert.AreEqual(Colors.Red, brush.Color, "0. a single parent propagates its DataContext");
-
-		// Losing the only parent removes the inheritance context: bindings re-resolve against nothing.
-		firstOwner.Background = null;
-		Assert.AreNotEqual(Colors.Red, brush.Color, "1. the removed parent's DataContext must not stay applied");
-
-		// Same-precedence replacement on an owner with no DataContext: nothing but the association touches the brush.
-		var secondOwner = new Border { Background = new SolidColorBrush(Colors.Yellow) };
-		secondOwner.Background = brush;
-		Assert.AreEqual((Windows.UI.Color)SolidColorBrush.ColorProperty.GetMetadata(typeof(SolidColorBrush)).DefaultValue, brush.Color, "2. with no DataContext the bound property falls back to its default");
-
-		secondOwner.DataContext = new { Color = Colors.Green };
-		Assert.AreEqual(Colors.Green, brush.Color, "3. the new single parent's DataContext propagates");
+		var owner = new Border { DataContext = dataContext };
+		owner.Background = brush;
+		return new WeakReference(owner);
 	}
 
 	[TestMethod]
@@ -402,14 +385,6 @@ partial class Given_UIElement
 			get => GetValue(ValueProperty);
 			set => SetValue(ValueProperty, value);
 		}
-	}
-
-	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-	private static WeakReference AttachToOwner(Brush brush, object dataContext)
-	{
-		var owner = new Border { DataContext = dataContext };
-		owner.Background = brush;
-		return new WeakReference(owner);
 	}
 
 	// An object that isn't a UIElement holds the DataContext its element pushes into it weakly; the element owns it. The tests

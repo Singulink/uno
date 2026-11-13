@@ -38,15 +38,24 @@ namespace Microsoft.UI.Xaml
 	{
 		private readonly object _gate = new object();
 
-		// Non-owning, like WinUI's CMultiParentShareableDependencyObject::AddParent (MultiParentShareableDependencyObject.cpp)
-		// which tracks raw parent pointers: a shared value (brush, backdrop, ...) must not keep the last element it was
-		// applied to alive. See AssociateParent(object).
+		// See note in AssociateParent(object). Weak, like the mentor link: a shared value (Brush, Transition, ...)
+		// held by a single owner must not keep that owner alive after it is removed.
+		// Borrows the owner's own weak self-reference (never returned to the pool), so associating allocates nothing.
 		private ManagedWeakReference? _associatedParentRef;
+
+		private object? AssociatedParent
+		{
+			get => _associatedParentRef?.Target;
+			set => _associatedParentRef = (value as IWeakReferenceProvider)?.WeakReference;
+		}
 
 		private HashtableEx? _childrenBindableMap; // maps DependencyProperty to _childrenBindable[index]
 		private List<object?>? _childrenBindable;
 		private HashtableEx ChildrenBindableMap => _childrenBindableMap ??= new HashtableEx(DependencyPropertyComparer.Default);
 		private List<object?> ChildrenBindable => _childrenBindable ??= new List<object?>();
+
+		// On the CHILD side: how many _childrenBindable slots (on any owner) hold this instance.
+		private int _bindableHolderCount;
 
 		// Mentor mechanism (models WinUI's SetParentForInheritanceContextOnly / GetMentor):
 		// On the CHILD side: weak ref to owning FrameworkElement (the mentor).
@@ -159,7 +168,7 @@ namespace Microsoft.UI.Xaml
 
 		private void SetInheritedDataContext(object? dataContext)
 		{
-			if (_inheritanceContextEnabled)
+			if (_inheritanceContextEnabled && !IsShareableResourceDictionaryItem())
 			{
 				SetValue(_dataContextProperty!, dataContext, DependencyPropertyValuePrecedences.Inheritance, _properties.DataContextPropertyDetails);
 			}
@@ -168,6 +177,15 @@ namespace Microsoft.UI.Xaml
 				ClearValue(_dataContextProperty!, DependencyPropertyValuePrecedences.Inheritance);
 			}
 		}
+
+		/// <summary>
+		/// A shareable value (Brush, Transition, ...) stored in a ResourceDictionary is typically used by many owners
+		/// over the app lifetime. Like the parent-propagation path (<see cref="OnParentPropertyChangedCallback"/>), the
+		/// bindable-child path must not cache an owner's DataContext on it: the dictionary would keep that DataContext
+		/// alive after the owner is gone.
+		/// </summary>
+		private bool IsShareableResourceDictionaryItem()
+			=> IsResourceDictionaryItem && ActualInstance is IMultiParentShareableDependencyObject;
 
 		/// <summary>
 		/// Apply load-time binding updates. Processes the x:Bind markup for the current FrameworkElement, applies load-time ElementName bindings, and updates ResourceBindings.
@@ -586,7 +604,13 @@ namespace Microsoft.UI.Xaml
 			{
 				var newValueAsProvider = newValue as IDependencyObjectStoreProvider;
 
-				if (propertyDetails.HasValueInherits)
+				if (newValueAsProvider is not null && IsDataContextIsolatedValue(newValueAsProvider))
+				{
+					// Nothing to propagate (their stores refuse a DataContext, see the constructor): don't track
+					// them, so a shared Style isn't associated with this owner either. Mirrors the mentor path below.
+					SetChildrenBindableValue(propertyDetails, null);
+				}
+				else if (propertyDetails.HasValueInherits)
 				{
 					if (newValueAsProvider is not null)
 					{
@@ -608,19 +632,25 @@ namespace Microsoft.UI.Xaml
 					{
 						SetChildrenBindableValue(propertyDetails, newValueAsProvider);
 					}
+					else
+					{
+						// null, a UIElement or a non-DependencyObject value: release the previous child for this
+						// property, so it stops receiving (and holding) this owner's DataContext.
+						SetChildrenBindableValue(propertyDetails, null);
+					}
 				}
 			}
 			else
 			{
 				// For ValueDoesNotInheritDataContext properties, establish a weak mentor link
-				// instead of using _childrenBindable (which calls AssociateParent with a strong ref).
+				// instead of using _childrenBindable (which pushes this owner's DataContext into the value).
 				// This matches WinUI's SetParentForInheritanceContextOnly behavior where
 				// non-FrameworkElement property values get a weak ref to the owning element.
 				// Exclude FrameworkTemplate (DataTemplate, ControlTemplate) and IMultiParentShareableDependencyObject
 				// (Style, Brush, etc.) since those are shareable and must not inherit DataContext via the mentor path.
 				if (newValue is IDependencyObjectStoreProvider newProvider
 					&& newProvider is not UIElement
-					&& newProvider is not FrameworkTemplate
+					&& !IsDataContextIsolatedValue(newProvider)
 					&& newProvider is not IMultiParentShareableDependencyObject)
 				{
 					SetMentoredChild(propertyDetails, newProvider);
@@ -632,6 +662,12 @@ namespace Microsoft.UI.Xaml
 				}
 			}
 		}
+
+		/// <summary>
+		/// Values that must never receive an inherited DataContext from the object that holds them.
+		/// </summary>
+		private static bool IsDataContextIsolatedValue(object? value)
+			=> value is FrameworkTemplate or Style;
 
 		private void SetChildrenBindableValue(DependencyPropertyDetails propertyDetails, object? value)
 		{
@@ -649,14 +685,40 @@ namespace Microsoft.UI.Xaml
 			void UpdateChildBindable(int index, object? newValue)
 			{
 				var oldValue = ChildrenBindable[index];
-				if (ReferenceEquals(oldValue, newValue)) return;
-
-				if (oldValue is IMultiParentShareableDependencyObject &&
-					oldValue is IDependencyObjectStoreProvider { Store: { _inheritanceContextEnabled: true } oldStore })
+				if (ReferenceEquals(oldValue, newValue))
 				{
-					oldStore.UnassociateParent(ActualInstance);
+					return;
 				}
+
+				if (oldValue is IDependencyObjectStoreProvider { Store: var oldStore })
+				{
+					if (oldValue is IMultiParentShareableDependencyObject && oldStore._inheritanceContextEnabled)
+					{
+						oldStore.UnassociateParent(ActualInstance);
+					}
+
+					// Drop the DataContext this owner pushed into the released child, so the child does not keep
+					// it alive. Skip a child that has its own parent (it inherits from there) or that already
+					// holds a different DataContext (e.g. it was handed to another owner first).
+					// Skip it too while another slot, on this owner or another one, still holds the child.
+					if (oldStore._bindableHolderCount > 0)
+					{
+						oldStore._bindableHolderCount--;
+					}
+
+					if (oldStore._bindableHolderCount == 0
+						&& oldStore.Parent is null
+						&& ReferenceEquals(oldStore.GetValue(oldStore._dataContextProperty), GetValue(_dataContextProperty)))
+					{
+						oldStore.ClearInheritedDataContext();
+					}
+				}
+
 				ChildrenBindable[index] = newValue;
+				if (newValue is IDependencyObjectStoreProvider { Store: var newChildStore })
+				{
+					newChildStore._bindableHolderCount++;
+				}
 				if (newValue is IMultiParentShareableDependencyObject &&
 					newValue is IDependencyObjectStoreProvider { Store: { _inheritanceContextEnabled: true } newStore })
 				{
@@ -709,10 +771,10 @@ namespace Microsoft.UI.Xaml
 			//		of ResourceDictionary and ContentControl.  It is ok to have multiple parents as long as
 			//		the first parent is a ResourceDictionary, or if the first parent is a ContentControl and there are at most
 			//		two parents.
-			// todo: if we are to implement that in the future, we should promote `_associatedParentRef` into a `List/HashSet<ManagedWeakReference>? _associatedParentRefs`
+			// todo: if we are to implement that in the future, we should promote `AssociatedParent` into a `List/HashSet<object?>? _associatedParents`
 
 			// A collected previous parent counts as no parent: it can no longer share this instance.
-			if (AssociatedParent is null)
+			if (AssociatedParent == null)
 			{
 				if (_associatedParentRef is not null)
 				{
@@ -720,6 +782,7 @@ namespace Microsoft.UI.Xaml
 					// (CDependencyObject::ReleaseImpl -> ResetReferencesFromChildren), taking the inheritance context with it,
 					// so drop the DataContext it pushed here. Keep the new owner's if the assignment already pushed it (a
 					// precedence change does), and leave a value with its own parent alone, like ApplyChildrenBindable.
+					ReleaseCollectedParent();
 					var parentDataContext = parent is IDependencyObjectStoreProvider { Store: var parentStore }
 						? parentStore.GetValue(parentStore._dataContextProperty)
 						: null;
@@ -730,20 +793,35 @@ namespace Microsoft.UI.Xaml
 					}
 				}
 
-				SetAssociatedParent(parent);
+				AssociatedParent = parent;
 				RegisterCollectibleParentAssociation(parent);
 			}
 			else
 			{
-				// if there are multiple parents (would be if we count the previous one `_associatedParentRef` and the current one `parent`),
+				// if there are multiple parents (would be if we count the previous one `AssociatedParent` and the current one `parent`),
 				// it means that the current instance is shared across multiple owners/parents,
 				// which means that it should no longer participate in any dc propagation.
 				_inheritanceContextEnabled = false;
 
 				ClearInheritedDataContext();
-				SetAssociatedParent(null);
+				AssociatedParent = null;
 			}
 		}
+
+		/// <summary>
+		/// Frees the association of a parent that was collected without unassociating. It never released its bindable
+		/// slot either, so give that one back.
+		/// </summary>
+		private void ReleaseCollectedParent()
+		{
+			_associatedParentRef = null;
+
+			if (_bindableHolderCount > 0)
+			{
+				_bindableHolderCount--;
+			}
+		}
+
 		private void UnassociateParent(object? parent)
 		{
 			if (parent == null) return;
@@ -751,31 +829,7 @@ namespace Microsoft.UI.Xaml
 
 			if (ReferenceEquals(AssociatedParent, parent))
 			{
-				SetAssociatedParent(null);
-
-				// Losing the only parent removes the inheritance context (WinUI: no mentor, bindings re-resolve against
-				// nothing), so the DataContext inherited from it, and the values bindings copied from it, must go too.
-				ClearInheritedDataContext();
-			}
-		}
-
-		/// <summary>
-		/// The single parent this shareable object is associated with, or null when there is none or it has been collected.
-		/// </summary>
-		internal object? AssociatedParent
-			=> _associatedParentRef?.TryGetTarget<object>(out var parent) is true ? parent : null;
-
-		private void SetAssociatedParent(object? parent)
-		{
-			if (_associatedParentRef is { } previous)
-			{
-				WeakReferencePool.ReturnWeakReference(this, previous);
-				_associatedParentRef = null;
-			}
-
-			if (parent is not null)
-			{
-				_associatedParentRef = WeakReferencePool.RentWeakReference(this, parent);
+				AssociatedParent = null;
 			}
 		}
 

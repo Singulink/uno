@@ -15,8 +15,6 @@ public partial class TextBox
 	private static TextBox? _activeImeTextBox;
 	private bool _isComposing;
 	private bool _platformTextApplyInProgress;
-	// TextCompositionChanged is held back until the platform's text sync lands, so handlers see the text the range refers to.
-	private bool _compositionChangedPending;
 	// True when the current composition session has the platform applying text directly
 	// (e.g., Android's InputConnection). In this mode, key events arrive independently
 	// from composition events and should NOT be swallowed by the IsComposing check.
@@ -28,6 +26,10 @@ public partial class TextBox
 	// has no text of its own (_compositionLength is 0), and an empty replacement leaves the selection alone.
 	private int _compositionSelectionLength;
 	private bool _compositionApplied;
+	// A platform that applies the text itself reports each update before syncing its text, which can still be refused: the range
+	// to go back to then, and whether the last update was refused.
+	private (int startIndex, int length, int resolvedLength) _compositionRangeBeforePlatformSync;
+	private bool _wasPlatformSyncRefused;
 
 	internal bool ShouldSwallowKeyDuringComposition => _isComposing && !_compositionAppliedByPlatform;
 
@@ -54,7 +56,7 @@ public partial class TextBox
 			return;
 		}
 		imeExtension.CompositionStarted += static (_, _) => _activeImeTextBox?.OnImeCompositionStarted();
-		imeExtension.CompositionUpdated += static (_, e) => _activeImeTextBox?.OnImeCompositionUpdated(e.Text, e.CursorPosition, e.ResolvedLength, e.TextAlreadyApplied, e.StartIndex, e.TextChangePending);
+		imeExtension.CompositionUpdated += static (_, e) => _activeImeTextBox?.OnImeCompositionUpdated(e.Text, e.CursorPosition, e.ResolvedLength, e.TextAlreadyApplied, e.CompositionStart);
 		imeExtension.CompositionCompleted += static (_, e) => _activeImeTextBox?.OnImeCompositionCompleted(e.Text, e.TextAlreadyApplied);
 		imeExtension.CompositionEnded += static (_, _) => _activeImeTextBox?.OnImeCompositionEnded();
 		_imeExtension = imeExtension;
@@ -92,12 +94,16 @@ public partial class TextBox
 		// _isComposing still true from a stale CompositionStarted). Without this, all
 		// subsequent key events would be swallowed at the IsComposing check in OnKeyDown.
 		_compositionAppliedByPlatform = false;
-		_platformTextApplyInProgress = false;
-		_compositionChangedPending = false;
 		if (_isComposing)
 		{
-			var (startIndex, length) = ResetComposition();
-			RaiseTextCompositionEnded(startIndex, length);
+			var startIndex = _compositionStartIndex;
+			var length = _compositionLength;
+			_isComposing = false;
+			_compositionLength = 0;
+			_compositionStartIndex = 0;
+			_compositionResolvedLength = 0;
+
+			TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, length));
 			InvalidateTextBoxRender();
 		}
 	}
@@ -116,20 +122,16 @@ public partial class TextBox
 		_compositionLength = 0;
 		_compositionResolvedLength = 0;
 		_compositionApplied = false;
+		_wasPlatformSyncRefused = false;
 
 		TextCompositionStarted?.Invoke(this, new TextCompositionStartedEventArgs(_compositionStartIndex, _compositionSelectionLength));
 	}
 
-	private void OnImeCompositionUpdated(string compositionText, int cursorPosition, int resolvedLength, bool textAlreadyApplied, int startIndex, bool textChangePending)
+	private void OnImeCompositionUpdated(string compositionText, int cursorPosition, int resolvedLength, bool textAlreadyApplied, int compositionStart)
 	{
 		if (IsReadOnly)
 		{
 			return;
-		}
-
-		if (startIndex >= 0)
-		{
-			_compositionStartIndex = Math.Min(startIndex, Text.Length);
 		}
 
 		if (textAlreadyApplied)
@@ -141,25 +143,23 @@ public partial class TextBox
 			// Mark the session so key events aren't swallowed by the IsComposing check
 			// (Android key events are independent of composition events).
 			_compositionAppliedByPlatform = true;
-			_compositionApplied = true;
+			OnPlatformCompositionUpdate();
+			if (compositionStart >= 0)
+			{
+				// An IME re-composing an existing word starts the composition before the caret.
+				_compositionStartIndex = compositionStart;
+			}
 		}
 		else if (!ReplaceCompositionText(compositionText, cursorPosition))
 		{
-			// Keep the range on the text that is really there, so clearing the composition can't delete a neighbor.
+			// Keep the range on the text that is really there, so clearing or cancelling the composition can't delete a neighbor.
 			return;
 		}
 
 		_compositionLength = compositionText.Length;
 		_compositionResolvedLength = resolvedLength;
 
-		if (textChangePending)
-		{
-			_compositionChangedPending = true;
-		}
-		else
-		{
-			TextCompositionChanged?.Invoke(this, new TextCompositionChangedEventArgs(_compositionStartIndex, _compositionLength));
-		}
+		TextCompositionChanged?.Invoke(this, new TextCompositionChangedEventArgs(_compositionStartIndex, _compositionLength));
 		InvalidateTextBoxRender();
 	}
 
@@ -171,22 +171,22 @@ public partial class TextBox
 		}
 
 		TrySetCurrentlyTyping(true);
-		var applied = textAlreadyApplied || ReplaceCompositionText(committedText);
-
-		var (startIndex, length) = ResetComposition();
-
-		if (applied)
-		{
-			// The committed text's own range: a platform applying the text itself may sync it only after
-			// this callback (Android's EndBatchEdit), so the text is not yet something to clamp to.
-			TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, committedText.Length));
-		}
-		else
+		var startIndex = _compositionStartIndex;
+		var committedLength = committedText.Length;
+		if (textAlreadyApplied ? _wasPlatformSyncRefused : !ReplaceCompositionText(committedText))
 		{
 			// A refused commit leaves the composition text that was already there, so report that range.
-			RaiseTextCompositionEnded(startIndex, length);
+			startIndex = Math.Min(startIndex, Text.Length);
+			committedLength = Math.Min(_compositionLength, Text.Length - startIndex);
 		}
 
+		_isComposing = false;
+		_compositionAppliedByPlatform = false;
+		_compositionLength = 0;
+		_compositionStartIndex = 0;
+		_compositionResolvedLength = 0;
+
+		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, committedLength));
 		InvalidateTextBoxRender();
 	}
 
@@ -195,38 +195,48 @@ public partial class TextBox
 		if (!_isComposing)
 		{
 			_compositionAppliedByPlatform = false;
-			_platformTextApplyInProgress = false;
-			_compositionChangedPending = false;
 			return;
 		}
 
 		// Composition ended without explicit commit — keep text as-is (matches WinUI behavior).
 		// The composition text was already inserted via ProcessTextInput during OnImeCompositionUpdated.
-		var (startIndex, length) = ResetComposition();
-		RaiseTextCompositionEnded(startIndex, length);
-		InvalidateTextBoxRender();
-	}
-
-	// Clears the composition state and returns the range of the composition text it covered.
-	private (int startIndex, int length) ResetComposition()
-	{
-		var range = (_compositionStartIndex, _compositionLength);
+		var startIndex = _compositionStartIndex;
+		var length = _compositionLength;
 		_isComposing = false;
 		_compositionAppliedByPlatform = false;
-		_platformTextApplyInProgress = false;
-		_compositionChangedPending = false;
 		_compositionLength = 0;
 		_compositionStartIndex = 0;
 		_compositionResolvedLength = 0;
-		return range;
+
+		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, length));
+		InvalidateTextBoxRender();
 	}
 
-	// A composition ending without its commit: a text change from outside it (a coercion, Text set
-	// from code) may have left the text shorter than the range, so handlers get the range as it fits.
-	private void RaiseTextCompositionEnded(int startIndex, int length)
+	// Runs before the update changes the range.
+	private void OnPlatformCompositionUpdate()
 	{
-		var start = Math.Min(startIndex, Text.Length);
-		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(start, Math.Min(length, Text.Length - start)));
+		_compositionRangeBeforePlatformSync = (_compositionStartIndex, _compositionLength, _compositionResolvedLength);
+		_wasPlatformSyncRefused = false;
+		_compositionApplied = true;
+	}
+
+	/// <summary>
+	/// The text the platform synced after reporting a composition update was refused, so no text change ends the platform's text
+	/// apply, and the range goes back to the text that is really there.
+	/// </summary>
+	private void OnPlatformSyncRefused()
+	{
+		_platformTextApplyInProgress = false;
+		if (!_isComposing)
+		{
+			return;
+		}
+
+		(_compositionStartIndex, _compositionLength, _compositionResolvedLength) = _compositionRangeBeforePlatformSync;
+		_wasPlatformSyncRefused = true;
+
+		TextCompositionChanged?.Invoke(this, new TextCompositionChangedEventArgs(_compositionStartIndex, _compositionLength));
+		InvalidateTextBoxRender();
 	}
 
 	/// <summary>
@@ -277,26 +287,27 @@ public partial class TextBox
 
 		if (_platformTextApplyInProgress)
 		{
-			// The platform already applied the text (e.g., Android EndBatchEdit).
-			// Don't cancel the composition — just clear the flag.
-			_platformTextApplyInProgress = false;
-			if (_compositionChangedPending)
+			// The platform already applied the text (e.g., Android EndBatchEdit), so don't cancel the composition.
+			// While its text is processed, edits by TextChanging handlers belong to it too: ProcessTextInput clears the flag.
+			if (!_isInputModifyingText)
 			{
-				_compositionChangedPending = false;
-				// The text may have been coerced shorter than the preedit the platform applied.
-				var appliedStart = Math.Min(_compositionStartIndex, Text.Length);
-				var appliedLength = Math.Min(_compositionLength, Text.Length - appliedStart);
-				TextCompositionChanged?.Invoke(this, new TextCompositionChangedEventArgs(appliedStart, appliedLength));
+				_platformTextApplyInProgress = false;
 			}
 			return;
 		}
 
-		var (startIndex, length) = ResetComposition();
+		var startIndex = _compositionStartIndex;
+		var length = _compositionLength;
+		_isComposing = false;
+		_compositionAppliedByPlatform = false;
+		_compositionLength = 0;
+		_compositionStartIndex = 0;
+		_compositionResolvedLength = 0;
 
 		// End and restart the session so that further IME input still works
 		// while the active TextBox reference stays in sync.
 		_imeExtension?.EndImeSession();
-		RaiseTextCompositionEnded(startIndex, length);
+		TextCompositionEnded?.Invoke(this, new TextCompositionEndedEventArgs(startIndex, length));
 		InvalidateTextBoxRender();
 
 		// Restart the IME session so the user can continue typing with IME.
@@ -318,7 +329,7 @@ public partial class TextBox
 		_imeExtension = extension;
 
 		EventHandler onStarted = (_, _) => _activeImeTextBox?.OnImeCompositionStarted();
-		EventHandler<ImeCompositionEventArgs> onUpdated = (_, e) => _activeImeTextBox?.OnImeCompositionUpdated(e.Text, e.CursorPosition, e.ResolvedLength, e.TextAlreadyApplied, e.StartIndex, e.TextChangePending);
+		EventHandler<ImeCompositionEventArgs> onUpdated = (_, e) => _activeImeTextBox?.OnImeCompositionUpdated(e.Text, e.CursorPosition, e.ResolvedLength, e.TextAlreadyApplied, e.CompositionStart);
 		EventHandler<ImeCompositionEventArgs> onCompleted = (_, e) => _activeImeTextBox?.OnImeCompositionCompleted(e.Text, e.TextAlreadyApplied);
 		EventHandler onEnded = (_, _) => _activeImeTextBox?.OnImeCompositionEnded();
 

@@ -5,13 +5,12 @@ namespace Microsoft.UI.Xaml
 	public partial class ResourceDictionary
 	{
 		/// <summary>
-		/// Clears stale <c>DependencyObjectStore._associatedParentRef</c> associations (weak references)
-		/// into collectible AssemblyLoadContexts, and the DataContext they propagated, on every
-		/// materialized value of this dictionary (recursing into nested, merged and theme
-		/// dictionaries). A shared resource (e.g. a theme brush) first consumed by a secondary-ALC
-		/// element records that element as its InheritanceContext parent; nothing unassociates it
-		/// when the element's ALC unloads, so the sweep resets that state at teardown so the
-		/// resource can re-associate with its next live consumer. Called during ALC teardown from
+		/// Clears <c>DependencyObjectStore.AssociatedParent</c> references (and the DataContext they propagated) into collectible
+		/// AssemblyLoadContexts on every materialized value of this dictionary (recursing into
+		/// nested, merged and theme dictionaries). A shared resource (e.g. a theme brush) first
+		/// consumed by a secondary-ALC element records that element as its InheritanceContext
+		/// parent; nothing unassociates it when the element's ALC unloads, so the host-lifetime
+		/// resource pins the collectible ALC. Called during ALC teardown from
 		/// <see cref="Application.CleanupNonDefaultAlcCaches"/>. Lazy (unmaterialized) entries
 		/// have no store and are skipped without being materialized.
 		/// </summary>

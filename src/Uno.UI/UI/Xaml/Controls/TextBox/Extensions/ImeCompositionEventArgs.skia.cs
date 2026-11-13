@@ -31,24 +31,16 @@ internal class ImeCompositionEventArgs : EventArgs
 	public bool TextAlreadyApplied { get; }
 
 	/// <summary>
-	/// Index of the composition within the text when the platform reports it, or -1 to keep
-	/// the caret position captured when the composition started.
+	/// Index of the composition in the TextBox text when the platform already applied it, or -1 if not available.
 	/// </summary>
-	public int StartIndex { get; }
+	public int CompositionStart { get; }
 
-	/// <summary>
-	/// When true, the platform applied a text change for this update and reports it right after
-	/// this event, so TextCompositionChanged is raised once that text is in place.
-	/// </summary>
-	public bool TextChangePending { get; }
-
-	public ImeCompositionEventArgs(string text, int cursorPosition = -1, int resolvedLength = 0, bool textAlreadyApplied = false, int startIndex = -1, bool textChangePending = false)
+	public ImeCompositionEventArgs(string text, int cursorPosition = -1, int resolvedLength = 0, bool textAlreadyApplied = false, int compositionStart = -1)
 	{
 		Text = text;
 		CursorPosition = cursorPosition;
 		ResolvedLength = resolvedLength;
 		TextAlreadyApplied = textAlreadyApplied;
-		StartIndex = startIndex;
-		TextChangePending = textChangePending;
+		CompositionStart = compositionStart;
 	}
 }

@@ -227,6 +227,14 @@ namespace Microsoft.UI.Xaml
 
 			_dataContextProperty = dataContextProperty;
 
+			// FrameworkTemplate and Style have no DataContext in WinUI and are usually shared (resources), so their
+			// store must never cache an inherited DataContext, whichever path (bindable child, collection item,
+			// parent propagation) delivers it: the shared instance would keep that DataContext alive.
+			if (IsDataContextIsolatedValue(originalObject))
+			{
+				_inheritanceContextEnabled = false;
+			}
+
 #if ENABLE_LEGACY_TEMPLATED_PARENT_SUPPORT
 			TemplatedParentScope.UpdateTemplatedParentIfNeeded(originalObject as DependencyObject, store: this);
 #endif
@@ -1023,7 +1031,7 @@ namespace Microsoft.UI.Xaml
 				WeakReferenceReturnDisposable releaseWeakDelegate,
 				IDisposable callbackManagerCookie,
 				ManagedWeakReference doStoreRef)
-				: base(callback.Target, doStoreRef.CloneWeakReference())
+				: base(callback.Target, doStoreRef.Target)
 			{
 				_callback = callback;
 				_releaseWeakDelegate = releaseWeakDelegate;
@@ -1090,7 +1098,7 @@ namespace Microsoft.UI.Xaml
 				WeakReferenceReturnDisposable weakCallbackRelease,
 				ManagedWeakReference instanceRef,
 				ExplicitPropertyChangedCallback callback)
-				: base(callback.Target, instanceRef.CloneWeakReference())
+				: base(callback.Target, instanceRef.Target)
 			{
 				_weakCallback = weakCallback;
 				_weakCallbackRelease = weakCallbackRelease;
@@ -1211,7 +1219,7 @@ namespace Microsoft.UI.Xaml
 				var instanceRef = ThisWeakReference;
 
 				return new RegisterParentChangedCallbackConditionalDisposable(
-					instanceRef.CloneWeakReference(),
+					this,
 					instanceRef,
 					weakCallbackRef,
 					weakCallback,
@@ -1234,7 +1242,7 @@ namespace Microsoft.UI.Xaml
 			private ParentChangedCallback _callback;
 
 			public RegisterParentChangedCallbackConditionalDisposable(
-				WeakReference conditionSource,
+				object conditionSource,
 				ManagedWeakReference doStoreRef,
 				ManagedWeakReference weakCallbackRef,
 				ParentChangedCallback weakCallback,

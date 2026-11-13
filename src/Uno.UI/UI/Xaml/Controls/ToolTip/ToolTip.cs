@@ -74,7 +74,7 @@ namespace Microsoft.UI.Xaml.Controls
 		private PlacementMode? m_pToolTipServicePlacementModeOverride;
 		private bool m_bIsPopupPositioned;
 		//private bool m_bClosing;
-		//private bool m_bIsOpenAsAutomaticToolTip;
+		private bool m_bIsOpenAsAutomaticToolTip;
 		private bool m_bCallPerformPlacementAtNextPopupOpen;
 		internal AutomaticToolTipInputMode m_inputMode = AutomaticToolTipInputMode.Mouse; // TODO Uno: This should be set from ToolTipService
 		internal bool m_isSliderThumbToolTip;
@@ -149,6 +149,11 @@ namespace Microsoft.UI.Xaml.Controls
 
 		private void OnOpenChanged(bool isOpen)
 		{
+			if (isOpen)
+			{
+				m_bIsOpenAsAutomaticToolTip = ToolTipService.s_bOpeningAutomaticToolTip;
+			}
+
 			PerformPlacementInternal();
 			if (_owner is not null)
 			{
@@ -185,10 +190,11 @@ namespace Microsoft.UI.Xaml.Controls
 				Closed?.Invoke(this, new RoutedEventArgs(this));
 				GoToElementState("Closed", useTransitions: true);
 
-				if (!isOpen)
+				if (!isOpen && m_bIsOpenAsAutomaticToolTip)
 				{
-					// As in WinUI's ToolTip::OnIsOpenChanged, the service lets go of a tooltip once it has closed, whichever
+					// As in WinUI's ToolTip::OnIsOpenChanged, the service lets go of a tooltip it opened once it has closed, whichever
 					// path closed it (a disabled tooltip asked to open also lands here, and stays the service's to close).
+					m_bIsOpenAsAutomaticToolTip = false;
 					ToolTipService.OnToolTipClosed(this);
 				}
 			}

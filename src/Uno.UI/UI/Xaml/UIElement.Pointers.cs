@@ -405,7 +405,7 @@ namespace Microsoft.UI.Xaml
 
 			if (args.TapCount == 1)
 			{
-				that.SafeRaiseEvent(TappedEvent, new TappedRoutedEventArgs(src, args));
+				that.RaiseTappedAfterPointerReleased(src, args);
 			}
 			else // i.e. args.TapCount == 2
 			{
@@ -413,11 +413,27 @@ namespace Microsoft.UI.Xaml
 			}
 		};
 
+		private void RaiseTappedAfterPointerReleased(UIElement src, TappedEventArgs args)
+			=> RaiseAfterPointerReleased(() => SafeRaiseEvent(TappedEvent, new TappedRoutedEventArgs(src, args)));
+
 		private static readonly TypedEventHandler<GestureRecognizer, RightTappedEventArgs> OnRecognizerRightTapped = (sender, args) =>
 		{
 			var that = (UIElement)sender.Owner;
 			var src = PointerRoutedEventArgs.LastPointerEvent?.OriginalSource as UIElement ?? that;
 
+			// Raise ContextRequested for mouse/pen input after RightTapped.
+			// For touch input, ContextRequested is raised via Holding gesture instead.
+			// This matches WinUI behavior where right-click triggers context menu.
+			// Like WinUI, the content root is resolved before the delayed release, whose handlers might remove the element from the tree.
+			var contextRequestRoot = args.PointerDeviceType is MuxPointerDeviceType.Mouse or MuxPointerDeviceType.Pen
+				? VisualTree.GetContentRootForElement(src)
+				: null;
+
+			that.RaiseAfterPointerReleased(() => RaiseRightTapped(that, src, args, contextRequestRoot));
+		};
+
+		private static void RaiseRightTapped(UIElement that, UIElement src, RightTappedEventArgs args, ContentRoot contextRequestRoot)
+		{
 			var rightTappedArgs = new RightTappedRoutedEventArgs(src, args);
 			that.SafeRaiseEvent(RightTappedEvent, rightTappedArgs);
 
@@ -440,24 +456,23 @@ namespace Microsoft.UI.Xaml
 				}
 			}
 
-			// Raise ContextRequested for mouse/pen input after RightTapped.
-			// For touch input, ContextRequested is raised via Holding gesture instead.
-			// This matches WinUI behavior where right-click triggers context menu.
-			var deviceType = args.PointerDeviceType;
-			if (deviceType == MuxPointerDeviceType.Mouse ||
-				deviceType == MuxPointerDeviceType.Pen)
+			// ContextRequestedEventArgs.TryGetPosition expects the position in the window, where the pointer pressed.
+			contextRequestRoot?.InputManager.ContextMenuProcessor.RaiseContextRequestedEvent(
+				src,
+				args.RawPosition,
+				isTouchInput: false);
+		}
+
+		private void RaiseAfterPointerReleased(Action raiseGesture)
+		{
+#if UNO_HAS_MANAGED_POINTERS
+			if (XamlRoot?.VisualTree.ContentRoot.InputManager.Pointers.TryDeferUntilReleaseBubbled(raiseGesture) is true)
 			{
-				var contentRoot = VisualTree.GetContentRootForElement(src);
-				if (contentRoot != null)
-				{
-					// ContextRequestedEventArgs.TryGetPosition expects the position in the window, where the pointer pressed.
-					contentRoot.InputManager.ContextMenuProcessor.RaiseContextRequestedEvent(
-						src,
-						args.RawPosition,
-						isTouchInput: false);
-				}
+				return;
 			}
-		};
+#endif
+			raiseGesture();
+		}
 
 		private static readonly TypedEventHandler<GestureRecognizer, HoldingEventArgs> OnRecognizerHolding = (sender, args) =>
 		{
