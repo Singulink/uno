@@ -320,6 +320,40 @@ partial class Given_UIElement
 	[RunsOnUIThread]
 	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
 	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
+	public async Task SingleParentNonFE_Parent_Collected_Then_Next_Parent_Has_Attached_Store()
+	{
+		// TextHighlighter keeps its values in an attached store, whose DataContext property is owned by
+		// AttachedDependencyObject. Reusing a brush whose first owner was collected reads the new owner's DataContext,
+		// which must not trip the property owner validation (on in Debug builds and under a debugger). TextBlock
+		// does this on every draw with a selection, with its selection brush.
+		var brush = new SolidColorBrush(Colors.SkyBlue);
+		var firstDataContext = new object();
+		var firstOwnerRef = AttachToOwner(brush, firstDataContext);
+		Assert.AreSame(firstDataContext, brush.DataContext, "Pre-condition: a single parent propagates its DataContext");
+
+		Assert.IsTrue(await TestHelper.TryWaitUntilCollected(firstOwnerRef), "Pre-condition: the first owner must be collectible while the brush is alive");
+
+		var validate = global::Uno.UI.FeatureConfiguration.DependencyProperty.ValidatePropertyOwnerOnReadWrite;
+		global::Uno.UI.FeatureConfiguration.DependencyProperty.ValidatePropertyOwnerOnReadWrite = true;
+		try
+		{
+			var highlighter = new TextHighlighter { Background = brush };
+			Assert.AreSame(brush, highlighter.Background);
+		}
+		finally
+		{
+			global::Uno.UI.FeatureConfiguration.DependencyProperty.ValidatePropertyOwnerOnReadWrite = validate;
+		}
+
+		Assert.IsNull(brush.DataContext, "a dead parent's DataContext must not survive re-association");
+
+		GC.KeepAlive(firstDataContext);
+	}
+
+	[TestMethod]
+	[RunsOnUIThread]
+	[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.Skia)]
+	[GitHubWorkItem("https://github.com/unoplatform/uno/issues/25099")]
 	public void SingleParentNonFE_Parent_Removes_Value_Then_Next_Parent_Starts_Clean()
 	{
 		var brush = new SolidColorBrush(Colors.SkyBlue);

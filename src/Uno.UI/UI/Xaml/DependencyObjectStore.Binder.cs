@@ -720,11 +720,12 @@ namespace Microsoft.UI.Xaml
 					// (CDependencyObject::ReleaseImpl -> ResetReferencesFromChildren), taking the inheritance context with it,
 					// so drop the DataContext it pushed here. Keep the new owner's if the assignment already pushed it (a
 					// precedence change does), and leave a value with its own parent alone, like ApplyChildrenBindable.
+					// Read through the details: an attached store's DataContext property fails the owner validation.
 					var parentDataContext = parent is IDependencyObjectStoreProvider { Store: var parentStore }
-						? parentStore.GetValue(parentStore._dataContextProperty)
+						? parentStore.GetValue(parentStore._properties.DataContextPropertyDetails)
 						: null;
 					if ((Parent is not { } ownParent || ReferenceEquals(ownParent, parent))
-						&& !ReferenceEquals(GetValue(_dataContextProperty), parentDataContext))
+						&& !ReferenceEquals(GetValue(_properties.DataContextPropertyDetails), parentDataContext))
 					{
 						ClearInheritedDataContext();
 					}
