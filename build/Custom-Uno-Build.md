@@ -4,7 +4,7 @@ Our apps run on a custom build of Uno Platform 6.8. It contains fixes they need 
 
 - **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
 - **Branch:** `custom/6.8`
-- **Based on:** Uno's `servicing/6.8` branch, merged in up to `6951c2cea6`. The apps restore `Uno.Sdk` `6.8.0-dev.66`, that is the official Uno.WinUI `6.8.0-dev.222` (commit `324a97b766` on that branch), and the custom build replaces that version's files.
+- **Based on:** Uno's `servicing/6.8` branch, merged in up to `5254ace373`. The apps restore `Uno.Sdk` `6.8.0-dev.66`, that is the official Uno.WinUI `6.8.0-dev.222` (commit `324a97b766` on that branch), and the custom build replaces that version's files.
 - **Publish script:** [`build/Publish-NuGetCacheOverride.ps1`](Publish-NuGetCacheOverride.ps1)
 
 ## How apps pick up the custom build
