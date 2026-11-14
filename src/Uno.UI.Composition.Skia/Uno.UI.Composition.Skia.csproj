@@ -22,7 +22,8 @@
 		<PlatformItemsBasePath>.\</PlatformItemsBasePath>
 
 		<UseCommonOverridePackage>true</UseCommonOverridePackage>
-		<CommonOverridePackageId>Uno.UI</CommonOverridePackageId>
+		<!-- Its own package, not Uno.WinUI. -->
+		<CommonOverridePackageId>$(PackageId)</CommonOverridePackageId>
 	</PropertyGroup>
 
 	<ItemGroup>

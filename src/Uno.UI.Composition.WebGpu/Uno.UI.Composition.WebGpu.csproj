@@ -13,7 +13,8 @@
 		<RootNamespace>Uno.UI.Composition.WebGpu</RootNamespace>
 		<UnoRuntimeVariant>Generic</UnoRuntimeVariant>
 		<UseCommonOverridePackage>true</UseCommonOverridePackage>
-		<CommonOverridePackageId>Uno.UI</CommonOverridePackageId>
+		<!-- Its own package, not Uno.WinUI. -->
+		<CommonOverridePackageId>$(PackageId)</CommonOverridePackageId>
 		<Description>WebGPU drawing backend for Uno Platform (implements the neutral IRenderBackend seam).</Description>
 	</PropertyGroup>
 
