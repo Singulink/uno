@@ -144,7 +144,8 @@ class TextInputConnection : BaseInputConnection
 
 	private void UpdateEditableSelectionAndText()
 	{
-		if (_activeTextBox is null)
+		// A local: the editable's listeners, notified by Clear, may change the active TextBox.
+		if (_activeTextBox is not { } textBox)
 		{
 			return;
 		}
@@ -156,7 +157,7 @@ class TextInputConnection : BaseInputConnection
 		// managed, the second was just typed
 		// before conversion) which looks like a single newline.
 		// cf. https://github.com/unoplatform/uno-private/issues/965
-		var text = _activeTextBox.Text.Replace('\r', '\n');
+		var text = textBox.Text.Replace('\r', '\n');
 
 		_duringTextBoxSelectionChanged = true;
 		if (!string.Equals(text, _editable.ToString(), StringComparison.Ordinal))
@@ -168,8 +169,8 @@ class TextInputConnection : BaseInputConnection
 		var length = _editable.Length() + 1;
 
 		SetSelection(
-			Math.Min(length, _activeTextBox.SelectionStart),
-			Math.Min(length, _activeTextBox.SelectionStart + _activeTextBox.SelectionLength));
+			Math.Min(length, textBox.SelectionStart),
+			Math.Min(length, textBox.SelectionStart + textBox.SelectionLength));
 
 		_duringTextBoxSelectionChanged = false;
 	}
@@ -191,7 +192,12 @@ class TextInputConnection : BaseInputConnection
 			if (ActiveTextBox is { } textBox)
 			{
 				var nativeText = _editable.ToString();
-				var textBefore = _editable.TextWhenBeginBatchEdit;
+				var nativeTextBefore = _editable.TextWhenBeginBatchEdit;
+
+				// Only after the IME changed the text.
+				var textBoxTextBefore = nativeTextBefore is not null && !string.Equals(nativeTextBefore, nativeText, StringComparison.Ordinal)
+					? textBox.Text
+					: null;
 
 				// Also raises the TextCompositionChanged the TextBox held back until this text is in Text.
 				textBox.UpdateTextFromNative(nativeText, selectionStart, selectionEnd - selectionStart);
@@ -199,12 +205,11 @@ class TextInputConnection : BaseInputConnection
 
 				// The TextBox refused the IME's edit, or kept text of another length (MaxLength, a length limit): the editable
 				// takes the TextBox's text at once and the composition ends, so the keyboard builds its next keystrokes and
-				// suggestions on the text the TextBox kept. Only after the IME changed the text, and only for the TextBox it
-				// synced: the handlers that ran may have moved focus to another TextBox, or cleared it.
-				if (textBefore is not null
-					&& !string.Equals(textBefore, nativeText, StringComparison.Ordinal)
+				// suggestions on the text the TextBox kept. Only for the TextBox it synced: the handlers that ran may have moved
+				// focus to another TextBox, or cleared it.
+				if (textBoxTextBefore is not null
 					&& ReferenceEquals(ActiveTextBox, textBox)
-					&& TextBox.MustReturnTextToNative(textBox.Text, textBefore, nativeText))
+					&& TextBox.MustReturnTextToNative(textBox.Text, textBoxTextBefore, nativeText, nativeTextBefore))
 				{
 					// One change for the listeners, with the final text: a TextCompositionEnded handler setting the text
 					// again is written afterwards (OnTextBoxTextChanged).

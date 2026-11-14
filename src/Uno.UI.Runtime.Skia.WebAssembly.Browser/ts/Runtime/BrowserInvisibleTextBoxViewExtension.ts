@@ -113,8 +113,8 @@
 								input.setSelectionRange(BrowserInvisibleTextBoxViewExtension.nextSelectionStart, BrowserInvisibleTextBoxViewExtension.nextSelectionEnd, BrowserInvisibleTextBoxViewExtension.nextSelectionDirection);
 							}
 							else if (BrowserInvisibleTextBoxViewExtension.isCompositionReported && BrowserInvisibleTextBoxViewExtension.pendingText !== null) {
-								// The composition holds text the TextBox refused (MaxLength), reconciled when it ends: the input's
-								// selection is in that text, not in the TextBox's.
+								// The composition holds text a same-length filter changed in the TextBox (upper case), reconciled when
+								// it ends: the input's selection is in that text, not in the TextBox's.
 							}
 							else {
 								if (input.selectionDirection == "backward") {
@@ -524,11 +524,13 @@
 		}
 
 		private static syncTextFromInput(input: HTMLInputElement | HTMLTextAreaElement) {
+			// The value the input had at the previous sync or write tells an edit from the same text reported again.
+			const previousValue = BrowserInvisibleTextBoxViewExtension.syncedValue;
 			BrowserInvisibleTextBoxViewExtension.syncedValue = input.value;
 			if (input.selectionDirection == "backward") {
-				BrowserInvisibleTextBoxViewExtension._exports.OnInputTextChanged(input.value, input.selectionEnd, input.selectionStart - input.selectionEnd);
+				BrowserInvisibleTextBoxViewExtension._exports.OnInputTextChanged(input.value, input.selectionEnd, input.selectionStart - input.selectionEnd, previousValue);
 			} else {
-				BrowserInvisibleTextBoxViewExtension._exports.OnInputTextChanged(input.value, input.selectionStart, input.selectionEnd - input.selectionStart);
+				BrowserInvisibleTextBoxViewExtension._exports.OnInputTextChanged(input.value, input.selectionStart, input.selectionEnd - input.selectionStart, previousValue);
 			}
 		}
 

@@ -1348,6 +1348,79 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 		}
 
+		// An upper-case filter leaves the TextBox's text ("AB") different from the composition's ("ab") until it ends. The input
+		// reporting its text again unchanged, the caret moved inside the preedit, is no new edit: the composition goes on.
+		[TestMethod]
+		[RunsOnUIThread]
+		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+		public async Task When_Browser_Ime_Filtered_Composition_Reported_Again_Stays_Open()
+		{
+			var SUT = await LoadFocusedForBrowserIme("");
+			SUT.TextChanging += (sender, _) => sender.Text = sender.Text.ToUpperInvariant();
+			try
+			{
+				await ReplayOnHiddenInput(ImeStart());
+				await ReplayOnHiddenInput(ImeCompose(0, 0, "ab", "ab", 2));
+				Assert.AreEqual("AB", SUT.Text);
+				Assert.IsTrue(SUT.IsComposing);
+
+				await ReplayOnHiddenInput(ImeCompose(0, 2, "ab", "ab", 1));
+
+				Assert.AreEqual("AB", SUT.Text);
+				Assert.IsTrue(SUT.IsComposing, "the same text reported again doesn't end the composition");
+			}
+			finally
+			{
+				WindowHelper.WindowContent = null;
+				await WindowHelper.WaitForIdle();
+			}
+		}
+
+		// A BeforeTextChanging handler refuses a composition that replaces the selection with as many characters: the text keeps
+		// its length, and the input still takes the TextBox's text back at once.
+		[TestMethod]
+		[RunsOnUIThread]
+		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
+		public async Task When_Browser_Ime_Same_Length_Replacement_Is_Refused()
+		{
+			var SUT = await LoadFocusedForBrowserIme("ab");
+			SUT.BeforeTextChanging += (_, e) => e.Cancel = e.NewText.Contains('c');
+			try
+			{
+				SUT.Select(0, 2);
+				await WindowHelper.WaitForIdle();
+
+				await ReplayOnHiddenInput(ImeStart());
+				await ReplayOnHiddenInput(ImeCompose(0, 2, "cd", "cd", 2));
+
+				Assert.AreEqual("ab", SUT.Text);
+				Assert.IsFalse(SUT.IsComposing, "the refused composition ends");
+				Assert.AreEqual("ab", GetHiddenInputState().Split('|')[0], "the input takes the TextBox's text at once");
+			}
+			finally
+			{
+				WindowHelper.WindowContent = null;
+				await WindowHelper.WaitForIdle();
+			}
+		}
+
+#if HAS_UNO
+		[TestMethod]
+		[DataRow("AB", "AB", "ab", "ab", false, DisplayName = "Same-length filter, text reported again")]
+		[DataRow("AB", "A", "ab", "a", false, DisplayName = "Same-length filter, new letter")]
+		[DataRow("abc", "abc", "abcd", "abc", true, DisplayName = "Refused past MaxLength")]
+		[DataRow("", "ab", "abc", "ab", true, DisplayName = "Coerced shorter")]
+		[DataRow("a\rb", "a\rb", "a\nb", "a\nb", false, DisplayName = "Line breaks")]
+		[DataRow("ab", "ab", "cd", "ab", true, DisplayName = "Same-length replacement refused")]
+		// Under a casing filter, a case-only change of the preedit looks like a refusal, so it ends the composition by design.
+		[DataRow("AB", "AB", "Ab", "ab", true, DisplayName = "Same-length filter, preedit case changed")]
+		[DataRow("ABC", "ABC", "abd", "abc", true, DisplayName = "Same-length replacement refused after a filter")]
+		[DataRow("ab", "ab", "cd", null, true, DisplayName = "Refused, input text before unknown")]
+		[DataRow("ab", "ab", "ab", "ab", false, DisplayName = "Echo")]
+		public void When_Native_Text_Is_Compared_To_The_Kept_Text(string kept, string hostBefore, string native, string nativeBefore, bool mustReturn)
+			=> Assert.AreEqual(mustReturn, TextBox.MustReturnTextToNative(kept, hostBefore, native, nativeBefore));
+#endif
+
 		// Gboard composes every word, here past MaxLength ("abcde" in a TextBox limited to 3). The input keeps the TextBox's
 		// text right after the refused update, so the keyboard builds its suggestions on "abc"; the next letter is refused the
 		// same way, and one Backspace then deletes the "c".

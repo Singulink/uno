@@ -110,14 +110,21 @@ public partial class TextBox
 
 	/// <summary>
 	/// Whether a platform's text input must take the TextBox's text back at once after the TextBox processed an edit the
-	/// input applied, which ends the input's composition: the TextBox refused the edit and kept its previous text, or kept
-	/// text of another length (MaxLength, a length limit). The keyboard then builds its next keystrokes and suggestions on
-	/// the text the TextBox kept. A change that keeps the length (a casing filter) stays in the composition until it ends,
-	/// so an IME can still convert it. Line breaks match whether written as '\r' (the TextBox) or '\n' (the platform).
+	/// input applied, which ends the input's composition: the TextBox kept text of another length than the input's
+	/// (MaxLength, a length limit), or the input's text changed and the TextBox refused it, keeping its own previous text.
+	/// The keyboard then builds its next keystrokes and suggestions on the text the TextBox kept. A change that keeps the
+	/// length (a casing filter) stays in the composition until it ends, so an IME can still convert it, and so does the
+	/// difference it left when the input reports its text again unchanged. Line breaks match whether written as '\r' (the
+	/// TextBox) or '\n' (the platform).
 	/// </summary>
-	internal static bool MustReturnTextToNative(string keptText, string textBefore, string nativeText)
+	/// <param name="keptText">The TextBox's text after it processed the edit.</param>
+	/// <param name="hostTextBefore">The TextBox's text before the edit.</param>
+	/// <param name="nativeText">The input's text with the edit.</param>
+	/// <param name="nativeTextBefore">The input's text before the edit, or null when unknown.</param>
+	internal static bool MustReturnTextToNative(string keptText, string hostTextBefore, string nativeText, string? nativeTextBefore)
 		=> !IsSameText(keptText, nativeText)
-			&& (keptText.Length != nativeText.Length || IsSameText(keptText, textBefore));
+			&& (keptText.Length != nativeText.Length
+				|| (IsSameText(keptText, hostTextBefore) && (nativeTextBefore is null || !IsSameText(nativeText, nativeTextBefore))));
 
 	// Compares without allocating a normalized copy, as this runs for every edit the platform applies.
 	private static bool IsSameText(string first, string second)
