@@ -471,10 +471,12 @@ internal sealed class UnoExploreByTouchHelper : ExploreByTouchHelper
 	private void OnClientRequest() => _adapter?.EnsureTreeRequested();
 
 	// Forwarded by the render view. Without a service, keys are ordinary input: AndroidX would otherwise
-	// populate every virtual node to move a keyboard focus nobody reads.
+	// populate every virtual node to move a keyboard focus nobody reads. An IME editor action never reaches it: a soft
+	// keyboard's Next or Done arrives as an Enter key, which the helper would take as a click on the virtual view holding its
+	// keyboard focus, possibly one no longer shown.
 	internal bool DispatchHostKeyEvent(KeyEvent e)
 	{
-		if (!_isAccessibilityServiceEnabled || _adapter is null)
+		if (!_isAccessibilityServiceEnabled || _adapter is null || (e.Flags & KeyEventFlags.EditorAction) != 0)
 		{
 			return false;
 		}
