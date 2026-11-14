@@ -46,9 +46,9 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 		}
 	}
 
-	/// <param name="previousText">The input's text at the previous sync or write, or null when unknown.</param>
+	/// <param name="textChanged">Whether the input's text differs from the one at the previous sync or write.</param>
 	[JSExport]
-	private static void OnInputTextChanged(string text, int selectionStart, int selectionLength, string? previousText) => RunFromNative(() =>
+	private static void OnInputTextChanged(string text, int selectionStart, int selectionLength, bool textChanged) => RunFromNative(() =>
 	{
 		var xamlRoot = WebAssemblyWindowWrapper.Instance.XamlRoot;
 		// We are expecting this to be called only when the TextBox is focused, as it's the result of an interaction with the native HTML input.
@@ -63,7 +63,7 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 			// The TextBox refused the edit, or kept text of another length (MaxLength, a length limit): its text goes back to
 			// the input at once, which ends the composition, so the keyboard builds its next keystrokes and suggestions on the
 			// text the TextBox kept.
-			if (TextBox.MustReturnTextToNative(textBox.Text, textBefore, nativeText, previousText) && WasmImeTextBoxExtension.EndRefusedComposition())
+			if (TextBox.MustReturnTextToNative(textBox.Text, textBefore, nativeText, textChanged) && WasmImeTextBoxExtension.EndRefusedComposition())
 			{
 				// The input got the TextBox's text back, without its caret.
 				textBox.TextBoxView.Select(textBox.SelectionStart, textBox.SelectionLength);
