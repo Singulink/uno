@@ -487,22 +487,20 @@ internal sealed partial class TextBoxCore
 		}
 
 		CopySelectionToClipboard();
+		CutSelection();
+	}
+
+	/// <summary>
+	/// Removes the selection the way a cut does, without copying it: as user input, recorded as an undo step.
+	/// </summary>
+	internal void CutSelection()
+	{
+		if (IsReadOnly || IsPassword)
+		{
+			return;
+		}
+
 		CutSelectionToClipboardPartial();
-#if __SKIA__
-		try
-		{
-			_suppressCurrentlyTyping = true;
-#else
-		{
-#endif
-			Text = Text.Remove(SelectionStart, SelectionLength);
-		}
-#if __SKIA__
-		finally
-		{
-			_suppressCurrentlyTyping = false;
-		}
-#endif
 	}
 
 	internal void OnTextChangedCore(string? oldValue, string? newValue)
@@ -1050,7 +1048,7 @@ internal sealed partial class TextBoxCore
 
 	/// <summary>
 	/// Returns <paramref name="text"/> with its line breaks as the TextBox stores them, as on WinUI: only the first line in a
-	/// single-line TextBox, and \r for every line break in a multi-line one. The coercion and the MaxLength check both use it.
+	/// single-line TextBox, and \r for every line break in a multi-line one. The coercion, the MaxLength check and paste use it.
 	/// </summary>
 	/// <param name="adjustPendingSelection">Whether the pending selection, which counts each \r\n as two characters, follows the change.</param>
 	private string NormalizeLineBreaks(string text, bool adjustPendingSelection = false)
@@ -1138,6 +1136,11 @@ internal sealed partial class TextBoxCore
 		var selectionStart = SelectionStart;
 		var selectionLength = SelectionLength;
 		var currentText = Text;
+
+		// Paste the line breaks as the TextBox stores them, so the room left under MaxLength counts what will be there. A
+		// single-line TextBox takes the pasted text's first line and keeps the text after the caret, as on WinUI.
+		clipboardText = NormalizeLineBreaks(clipboardText);
+
 		var adjustedClipboardText = clipboardText;
 
 		if (selectionLength > 0)
@@ -1147,35 +1150,23 @@ internal sealed partial class TextBoxCore
 
 		if (MaxLength > 0)
 		{
-			var clipboardRangeToBePasted = Math.Max(0, Math.Min(clipboardText.Length, MaxLength - currentText.Length));
-			adjustedClipboardText = clipboardText[..clipboardRangeToBePasted];
+			// A surrogate pair that doesn't fit is left out whole, as on WinUI: half of one isn't text.
+			adjustedClipboardText = TextUnitNavigation.TruncateToUtf16Limit(clipboardText, MaxLength - currentText.Length);
 		}
 
 		currentText = currentText.Insert(selectionStart, adjustedClipboardText);
-		PasteFromClipboardPartial(adjustedClipboardText, selectionStart, currentText);
-
-#if __SKIA__
 		try
 		{
-			_clearHistoryOnTextChanged = false;
-			_suppressCurrentlyTyping = true;
-#else
-		{
-#endif
-			ProcessTextInput(currentText);
+			PasteFromClipboardPartial(adjustedClipboardText, selectionStart, currentText);
 		}
-#if __SKIA__
 		finally
 		{
-			_suppressCurrentlyTyping = false;
-			_clearHistoryOnTextChanged = true;
 			if (Text.IsNullOrEmpty())
 			{
 				// On WinUI, the caret never has thumbs if there is no text
 				CaretMode = CaretDisplayMode.ThumblessCaretShowing;
 			}
 		}
-#endif
 
 		_host.RaisePaste(new TextControlPasteEventArgs());
 	}
