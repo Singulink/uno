@@ -245,6 +245,198 @@ function Invoke-Dotnet([string[]]$Arguments) {
 	finally { Pop-Location }
 }
 
+# The overridden packages keep the version apps restore, so their nuspecs still declare the dependencies the official build
+# was packed with, which can be older than what the build compiled against (SkiaSharp, Svg.Skia, HarfBuzzSharp...). NuGet
+# resolves a package's dependencies from the nuspec extracted in the cache, so each one gets the dependencies the build would
+# pack: those of build\nuget\<id>.nuspec, with the Uno versions CI stamps (PrepareNuGetPackage in build\Uno.UI.Build.csproj)
+# set to -Version, or, for a package a project packs, the dependency groups of `dotnet pack` for the frameworks built here.
+# The downloaded .nupkg, its hash and signature stay as they are; the official nuspec is kept as .<id>.nuspec.official.
+function Get-DependencyLines([System.Xml.XmlElement]$Dependencies) {
+	$lines = @{}
+	if (-not $Dependencies) { return $lines }
+	foreach ($node in $Dependencies.ChildNodes) {
+		if ($node.LocalName -eq 'group') {
+			# net10.0-windows10.0.19041 and net10.0-windows10.0.19041.0 are the same framework.
+			$tfm = $node.GetAttribute('targetFramework') -replace '^(.+-\w+\d+\.\d+\.\d+)\.0$', '$1'
+			$lines[$tfm] = @($node.ChildNodes | Where-Object { $_.LocalName -eq 'dependency' } | ForEach-Object { "$($_.GetAttribute('id')) $($_.GetAttribute('version'))" } | Sort-Object)
+		}
+		elseif ($node.LocalName -eq 'dependency') {
+			$lines['(any)'] = @($lines['(any)']) + "$($node.GetAttribute('id')) $($node.GetAttribute('version'))" | Where-Object { $_ }
+		}
+	}
+	return $lines
+}
+
+# Compares two NuGet versions: 1.2.3 (or 1.2.3.4) with an optional -prerelease, which sorts before the release.
+function Compare-PackageVersion([string]$Left, [string]$Right) {
+	$l = $Left.Split('-', 2); $r = $Right.Split('-', 2)
+	$numbers = ([version]$l[0]).CompareTo([version]$r[0])
+	if ($numbers -ne 0) { return $numbers }
+	if ($l.Count -eq 1 -and $r.Count -eq 1) { return 0 }
+	if ($l.Count -eq 1) { return 1 }
+	if ($r.Count -eq 1) { return -1 }
+	return [string]::CompareOrdinal($l[1], $r[1])
+}
+
+function Copy-DependencyNode([System.Xml.XmlDocument]$Target, [System.Xml.XmlElement]$Source, [string[]]$StampedIds) {
+	$copy = $Target.CreateElement($Source.LocalName, $Target.DocumentElement.NamespaceURI)
+	foreach ($attribute in $Source.Attributes) { $copy.SetAttribute($attribute.LocalName, $attribute.Value) }
+	if ($Source.LocalName -eq 'dependency' -and $StampedIds -contains $Source.GetAttribute('id')) { $copy.SetAttribute('version', $Version) }
+	foreach ($child in $Source.ChildNodes) {
+		if ($child -is [System.Xml.XmlElement]) { [void]$copy.AppendChild((Copy-DependencyNode $Target $child $StampedIds)) }
+	}
+	return $copy
+}
+
+function Update-PackageDependencies {
+	$build = [xml](Get-Content (Join-Path $Worktree 'build\Uno.UI.Build.csproj') -Raw)
+	$stampedIds = @($build.SelectNodes("//*[local-name()='Target'][@Name='PrepareNuGetPackage']/*[local-name()='XmlPoke']") |
+			ForEach-Object { if ($_.GetAttribute('Query') -match "dependency\[@id='([^']+)'\]") { $Matches[1] } })
+	if (-not $stampedIds) { throw "No Uno dependency versions found in PrepareNuGetPackage (build\Uno.UI.Build.csproj)." }
+
+	$projects = @{}
+	foreach ($project in Get-ChildItem (Join-Path $Worktree 'src') -Recurse -Filter *.csproj) {
+		$text = Get-Content $project.FullName -Raw
+		$packageId = if ($text -match '<PackageId>([^<$]+)</PackageId>') { $Matches[1] } else { [IO.Path]::GetFileNameWithoutExtension($project.Name) }
+		if (-not $projects.ContainsKey($packageId.ToLowerInvariant())) { $projects[$packageId.ToLowerInvariant()] = $project.FullName }
+	}
+
+	$packDir = Join-Path $logs 'pack'
+	$report = New-Object System.Collections.Generic.List[string]
+	$declaredLines = New-Object System.Collections.Generic.List[string]
+	foreach ($folder in Get-VersionFolders | Where-Object { Test-Path (Join-Path $_ '*.nupkg') }) {
+		$nuspecFile = Get-ChildItem $folder -Filter *.nuspec | Select-Object -First 1
+		$official = Join-Path $folder ".$($nuspecFile.Name).official"
+		if (-not (Test-Path $official)) {
+			if ($DryRun) { $official = $nuspecFile.FullName } else { Copy-Item $nuspecFile.FullName $official }
+		}
+
+		$doc = New-Object System.Xml.XmlDocument
+		$doc.PreserveWhitespace = $false
+		$doc.Load($official)
+		$metadata = $doc.DocumentElement.SelectSingleNode("*[local-name()='metadata']")
+		$id = $metadata.SelectSingleNode("*[local-name()='id']").InnerText
+		$dependencies = $metadata.SelectSingleNode("*[local-name()='dependencies']")
+		$before = Get-DependencyLines $dependencies
+
+		$repoNuspec = Join-Path $Worktree "build\nuget\$id.nuspec"
+		if (Test-Path $repoNuspec) {
+			$source = ([xml](Get-Content $repoNuspec -Raw)).DocumentElement.SelectSingleNode("*[local-name()='metadata']/*[local-name()='dependencies']")
+			if ($dependencies) { $dependencies.RemoveAll() } elseif ($source) { $dependencies = $metadata.AppendChild($doc.CreateElement('dependencies', $doc.DocumentElement.NamespaceURI)) }
+			if ($source) { foreach ($child in $source.ChildNodes) { if ($child -is [System.Xml.XmlElement]) { [void]$dependencies.AppendChild((Copy-DependencyNode $doc $child $stampedIds)) } } }
+			$from = "build\nuget\$id.nuspec"
+		}
+		elseif ($projects.ContainsKey($id.ToLowerInvariant()) -and $dependencies) {
+			$project = $projects[$id.ToLowerInvariant()]
+			$from = "dotnet pack $($project.Substring($Worktree.Length + 1))"
+			# Only the frameworks this script builds; the others keep the official groups.
+			$overrides = @{}
+			foreach ($group in $dependencies.ChildNodes | Where-Object { $_.LocalName -eq 'group' }) {
+				$tfm = $group.GetAttribute('targetFramework')
+				if ($tfm -eq $Framework -or $tfm -like '.NETStandard*') { $overrides[$Framework] = $true }
+				elseif ($tfm -like "$Framework-android*") { $overrides[$android] = $true }
+				elseif ($tfm -like "$Framework-ios*") { $overrides["$Framework-ios"] = $true }
+			}
+			$packed = @()
+			foreach ($override in $overrides.Keys) {
+				if ($DryRun) { continue }
+				$out = Join-Path $packDir "$id-$override"
+				if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+				Invoke-Dotnet @('pack', $project, '-c', 'Release', '--no-build', '--no-restore', '-nologo', '-v:q', "-p:UnoTargetFrameworkOverride=$override",
+					"-p:PackageVersion=$Version", '-p:NuGetAudit=false', '-p:GeneratePackageOnBuild=false', '-o', $out) | Out-Null
+				$nupkg = Get-ChildItem $out -Filter *.nupkg -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*.symbols.nupkg' } | Select-Object -First 1
+				if ($LASTEXITCODE -ne 0 -or -not $nupkg) { $failures.Add("Packing $id for $override failed (dependencies left as published)"); continue }
+				$zip = [IO.Compression.ZipFile]::OpenRead($nupkg.FullName)
+				try {
+					$entry = $zip.Entries | Where-Object { $_.FullName -like '*.nuspec' } | Select-Object -First 1
+					$reader = New-Object IO.StreamReader($entry.Open())
+					try { $packed += ([xml]$reader.ReadToEnd()).DocumentElement.SelectSingleNode("*[local-name()='metadata']/*[local-name()='dependencies']") } finally { $reader.Dispose() }
+				}
+				finally { $zip.Dispose() }
+			}
+			foreach ($packedDependencies in $packed) {
+				foreach ($group in $packedDependencies.ChildNodes | Where-Object { $_.LocalName -eq 'group' }) {
+					$tfm = $group.GetAttribute('targetFramework')
+					$existing = $dependencies.ChildNodes | Where-Object { $_.LocalName -eq 'group' -and $_.GetAttribute('targetFramework') -eq $tfm } | Select-Object -First 1
+					if ($existing) { [void]$dependencies.ReplaceChild((Copy-DependencyNode $doc $group @()), $existing) }
+				}
+			}
+		}
+		else {
+			continue
+		}
+
+		$after = Get-DependencyLines $dependencies
+		# What the build declares for the frameworks it builds (other frameworks of a project-packed package stay official).
+		foreach ($tfm in $after.Keys | Where-Object { $_ -like "$Framework*" -or $_ -like '.NETStandard*' -or $_ -eq '(any)' }) {
+			$declaredLines.AddRange([string[]]@($after[$tfm] | Where-Object { $_ }))
+		}
+		$changes = New-Object System.Collections.Generic.List[string]
+		foreach ($tfm in (@($before.Keys) + @($after.Keys) | Sort-Object -Unique)) {
+			$old = @($before[$tfm]); $new = @($after[$tfm])
+			foreach ($line in $old | Where-Object { $_ -and $new -notcontains $_ }) { $changes.Add("    $tfm  - $line") }
+			foreach ($line in $new | Where-Object { $_ -and $old -notcontains $_ }) { $changes.Add("    $tfm  + $line") }
+		}
+		if ($changes.Count) {
+			$report.Add("${id} (from $from):")
+			$report.AddRange($changes)
+		}
+		else {
+			$report.Add("${id} (from $from): unchanged")
+		}
+
+		if (-not $DryRun) {
+			$settings = New-Object System.Xml.XmlWriterSettings
+			$settings.Indent = $true
+			$settings.Encoding = New-Object System.Text.UTF8Encoding($true)
+			$writer = [System.Xml.XmlWriter]::Create($nuspecFile.FullName, $settings)
+			try { $doc.Save($writer) } finally { $writer.Dispose() }
+		}
+	}
+
+	# Uno.Sdk adds some of those packages to apps itself (SkiaSharp's native assets, Svg.Skia), at the versions of its
+	# packages.json, which isn't built here. In each cached Uno.Sdk that pins this Uno version, a group holding a package the
+	# overridden packages declare takes the version they declare; the other groups (Extensions, Toolkit, ...) stay as published.
+	$declared = @{}
+	foreach ($line in $declaredLines) {
+		$parts = $line.Split(' ')
+		if (-not $declared.ContainsKey($parts[0].ToLowerInvariant())) { $declared[$parts[0].ToLowerInvariant()] = New-Object System.Collections.Generic.HashSet[string] }
+		[void]$declared[$parts[0].ToLowerInvariant()].Add($parts[1])
+	}
+	foreach ($sdkFolder in Get-ChildItem (Join-Path $cache 'uno.sdk') -Directory -ErrorAction SilentlyContinue) {
+		$manifest = Join-Path $sdkFolder.FullName 'targets\netstandard2.0\packages.json'
+		if (-not (Test-Path $manifest)) { continue }
+		$officialManifest = Join-Path $sdkFolder.FullName 'targets\netstandard2.0\.packages.json.official'
+		$sourceManifest = if (Test-Path $officialManifest) { $officialManifest } else { $manifest }
+		$groups = Get-Content $sourceManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+		$core = $groups | Where-Object { $_.group -eq 'Core' } | Select-Object -First 1
+		if (-not $core -or $core.version -ne $Version) { continue }
+
+		$changes = New-Object System.Collections.Generic.List[string]
+		foreach ($group in $groups | Where-Object { $_.group -ne 'Core' }) {
+			$versions = @($group.packages | ForEach-Object { $key = $_.ToLowerInvariant(); if ($declared.ContainsKey($key)) { $declared[$key] } } | Sort-Object -Unique)
+			# A declared dependency is a minimum: a newer version the Sdk already pins satisfies it.
+			if ($versions.Count -ne 1 -or (Compare-PackageVersion $versions[0] $group.version) -le 0) { continue }
+			$changes.Add("    $($group.group)  $($group.version) -> $($versions[0])")
+			$group.version = $versions[0]
+			if ($group.PSObject.Properties['versionOverride'] -and $group.versionOverride.PSObject.Properties[$Framework]) { $group.versionOverride.$Framework = $versions[0] }
+		}
+		$report.Add("Uno.Sdk $($sdkFolder.Name) (packages.json):$(if (-not $changes.Count) { ' unchanged' })")
+		$report.AddRange($changes)
+		if (-not $DryRun -and $changes.Count) {
+			if (-not (Test-Path $officialManifest)) { Copy-Item $manifest $officialManifest }
+			[IO.File]::WriteAllText($manifest, (ConvertTo-Json @($groups) -Depth 6), (New-Object System.Text.UTF8Encoding($true)))
+		}
+	}
+
+	if ($DryRun) { Write-Host '  [dry run] project-packed packages are only listed; their dependencies come from packing the built projects.' -ForegroundColor DarkYellow }
+	$report | ForEach-Object { Write-Host $_ }
+	if (-not $DryRun) {
+		New-Item -ItemType Directory -Force $logs | Out-Null
+		$report | Set-Content (Join-Path $logs 'dependencies.txt') -Encoding UTF8
+	}
+}
+
 if ($DryRun) {
 	Write-Step "Dry run: $Ref ($shortCommit) over Uno $Version in $cache, for $Framework with SDK $SdkVersion"
 	Write-Host 'Nothing is built, moved, deleted or written.'
@@ -293,6 +485,11 @@ if ($DryRun) {
 			$summary = ($byCommit | ForEach-Object { "$($_.Count) from $($_.Name)" }) -join ', '
 			Write-DryRun "$($checkedFolder.Id)\$Version\$($checkedFolder.Name): $($dlls.Count) assemblies ($summary)"
 		}
+	}
+
+	if (Test-Path (Join-Path $Worktree 'build\Uno.UI.Build.csproj')) {
+		Write-Step "Dependencies the run would declare, from $Worktree as it is (changes from the official nuspecs)"
+		Update-PackageDependencies
 	}
 }
 elseif (-not $VerifyOnly) {
@@ -372,6 +569,9 @@ elseif (-not $VerifyOnly) {
 			Write-Host "Done in $([int]$watch.Elapsed.TotalMinutes) min"
 		}
 	}
+
+	Write-Step "Declaring the dependencies the build was compiled against (changes from the official nuspecs)"
+	Update-PackageDependencies
 }
 
 Write-Step "Tidying the Uno $Version packages in $cache"
