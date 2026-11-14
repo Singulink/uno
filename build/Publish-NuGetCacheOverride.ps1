@@ -342,8 +342,13 @@ function Update-PackageDependencies {
 				if ($DryRun) { continue }
 				$out = Join-Path $packDir "$id-$override"
 				if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-				Invoke-Dotnet @('pack', $project, '-c', 'Release', '--no-build', '--no-restore', '-nologo', '-v:q', "-p:UnoTargetFrameworkOverride=$override",
-					"-p:PackageVersion=$Version", '-p:NuGetAudit=false', '-p:GeneratePackageOnBuild=false', '-o', $out) | Out-Null
+				# Restored again: another step may have restored the project for another framework since. A project whose packing
+				# builds its references (the WebAssembly runtime) is packed with an incremental build instead, which has no
+				# UnoNugetOverrideVersion and so doesn't write the cache.
+				$packArguments = @('pack', $project, '-c', 'Release', '-nologo', '-v:q', "-p:UnoTargetFrameworkOverride=$override",
+					"-p:PackageVersion=$Version", '-p:NuGetAudit=false', '-p:GeneratePackageOnBuild=false', '-o', $out)
+				Invoke-Dotnet ($packArguments + '--no-build') | Out-Null
+				if ($LASTEXITCODE -ne 0) { Invoke-Dotnet $packArguments | Out-Null }
 				$nupkg = Get-ChildItem $out -Filter *.nupkg -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*.symbols.nupkg' } | Select-Object -First 1
 				if ($LASTEXITCODE -ne 0 -or -not $nupkg) { $failures.Add("Packing $id for $override failed (dependencies left as published)"); continue }
 				$zip = [IO.Compression.ZipFile]::OpenRead($nupkg.FullName)
