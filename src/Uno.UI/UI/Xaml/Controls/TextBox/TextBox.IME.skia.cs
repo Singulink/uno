@@ -109,6 +109,38 @@ public partial class TextBox
 	}
 
 	/// <summary>
+	/// Whether a platform's text input must take the TextBox's text back at once after the TextBox processed an edit the
+	/// input applied, which ends the input's composition: the TextBox refused the edit and kept its previous text, or kept
+	/// text of another length (MaxLength, a length limit). The keyboard then builds its next keystrokes and suggestions on
+	/// the text the TextBox kept. A change that keeps the length (a casing filter) stays in the composition until it ends,
+	/// so an IME can still convert it. Line breaks match whether written as '\r' (the TextBox) or '\n' (the platform).
+	/// </summary>
+	internal static bool MustReturnTextToNative(string keptText, string textBefore, string nativeText)
+		=> !IsSameText(keptText, nativeText)
+			&& (keptText.Length != nativeText.Length || IsSameText(keptText, textBefore));
+
+	// Compares without allocating a normalized copy, as this runs for every edit the platform applies.
+	private static bool IsSameText(string first, string second)
+	{
+		if (first.Length != second.Length)
+		{
+			return false;
+		}
+
+		for (var i = 0; i < first.Length; i++)
+		{
+			var a = first[i] == '\r' ? '\n' : first[i];
+			var b = second[i] == '\r' ? '\n' : second[i];
+			if (a != b)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/// <summary>
 	/// The platform's IME (Skia Android's EndBatchEdit) synced the text it applied itself, with its caret.
 	/// </summary>
 	internal void UpdateTextFromNative(string text, int selectionStart, int selectionLength)
@@ -362,7 +394,8 @@ public partial class TextBox
 		if (_platformTextApplyInProgress)
 		{
 			// The platform already applied the text (e.g., Android EndBatchEdit), so don't cancel the composition.
-			// While its text is processed, edits by TextChanging handlers belong to it too: ProcessTextInput clears the flag.
+			// While its text is processed, edits by TextChanging handlers belong to it too: ProcessTextInput clears the flag. The
+			// platform ends the composition afterwards if such an edit changed the text's length (MustReturnTextToNative).
 			if (!_isInputModifyingText)
 			{
 				_platformTextApplyInProgress = false;

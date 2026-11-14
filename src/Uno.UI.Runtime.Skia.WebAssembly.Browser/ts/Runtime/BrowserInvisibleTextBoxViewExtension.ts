@@ -461,8 +461,8 @@
 				}
 			}
 			if (textDiffers && BrowserInvisibleTextBoxViewExtension.isSyncTarget(input, generation)) {
-				// The TextBox re-applies its edits (a TextChanging filter, MaxLength) to the committed value and
-				// pushes the result to the input.
+				// The TextBox re-applies its same-length edits (a casing filter) to the committed value and pushes
+				// the result to the input.
 				BrowserInvisibleTextBoxViewExtension.syncTextFromInput(input);
 			}
 		}
@@ -912,7 +912,8 @@
 			const input = BrowserInvisibleTextBoxViewExtension.inputElement;
 			if (input != null) {
 				// While a composition edits the text, the browser owns the value: overwriting it would destroy the
-				// composition. A TextBox text that differs from it (an app edit, MaxLength) is reconciled once it ends.
+				// composition. A TextBox text that differs from it only as a same-length filter changes it (upper case) is
+				// reconciled once it ends; for any other difference the TextBox ends the composition first.
 				if (BrowserInvisibleTextBoxViewExtension.isCompositionReported) {
 					BrowserInvisibleTextBoxViewExtension.pendingText = BrowserInvisibleTextBoxViewExtension.asInputValue(input, text) === input.value ? null : text;
 					return;

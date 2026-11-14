@@ -254,11 +254,14 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				await ReplayOnHiddenInput(ImeCompose(0, 0, "hel", "hel", 3));
 				await ReplayOnHiddenInput(ImeCompose(0, 3, "hell", "hell", 4));
 				Assert.AreEqual("hel", SUT.Text, "MaxLength rejects the longer text");
+				Assert.AreEqual("hel|3", GetHiddenInputState(), "the input takes the TextBox's text at once");
+				Assert.IsFalse(SUT.IsComposing);
 
+				// The browser's end of the composition the value change cancelled changes nothing.
 				await ReplayOnHiddenInput(ImeEnd("hell"));
 
 				Assert.AreEqual("hel", SUT.Text);
-				Assert.AreEqual("hel", GetHiddenInputState().Split('|')[0]);
+				Assert.AreEqual("hel|3", GetHiddenInputState());
 			}
 			finally
 			{
@@ -278,21 +281,19 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			SUT.TextChanging += (sender, _) => sender.Text = sender.Text.ToUpperInvariant();
 			try
 			{
-				// As with an Android InputFilter, the filtered text goes back to the input at once, which ends the composition.
 				await ReplayOnHiddenInput(ImeStart());
 				await ReplayOnHiddenInput(ImeCompose(0, 0, "he", "he", 2));
-
-				Assert.AreEqual("HE", SUT.Text);
-				Assert.AreEqual(1, ended, "the filter's edit ends the composition");
-				Assert.AreEqual("HE|2", GetHiddenInputState(), "the input takes the filtered text at once");
-
-				// The browser ends the composition the value change cancelled, and the keyboard composes its next letter anew.
-				await ReplayOnHiddenInput(ImeEnd("he"));
-				await ReplayOnHiddenInput(ImeStart() + ImeCompose(2, 2, "l", "HEl", 3));
+				await ReplayOnHiddenInput(ImeCompose(0, 2, "hel", "hel", 3));
 
 				Assert.AreEqual("HEL", SUT.Text);
-				Assert.AreEqual(2, ended);
-				Assert.AreEqual("HEL|3", GetHiddenInputState());
+				Assert.AreEqual(0, ended, "the filter's edit must not end the composition");
+				Assert.AreEqual("hel|3", GetHiddenInputState(), "the browser owns the input while composing");
+
+				await ReplayOnHiddenInput(ImeEnd("hel"));
+
+				Assert.AreEqual("HEL", SUT.Text);
+				Assert.AreEqual(1, ended);
+				Assert.AreEqual("HEL", GetHiddenInputState().Split('|')[0]);
 			}
 			finally
 			{
@@ -863,7 +864,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		}
 
 		// A TextCompositionEnded handler moves focus to another TextBox while the TextBox's text differs from the commit (a
-		// TextChanging filter): the commit isn't reconciled into the newly focused TextBox.
+		// casing TextChanging filter, reconciled when the composition ends): the commit isn't reconciled into the newly
+		// focused TextBox.
 		[TestMethod]
 		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
@@ -1092,13 +1094,17 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				await ReplayOnHiddenInput(ImeStart());
 				await ReplayOnHiddenInput(ImeCompose(2, 2, "c", "abc", 3));
 
+				// Kept shorter than the input's text, so the input takes it back at once and the composition ends.
 				Assert.AreEqual("", SUT.Text);
 				CollectionAssert.AreEqual(new[] { "0+0 " }, ranges);
+				Assert.IsFalse(SUT.IsComposing);
+				CollectionAssert.AreEqual(new[] { "0+0 " }, ended);
+				Assert.AreEqual("|0", GetHiddenInputState());
 
+				// The browser's end of the composition the value change cancelled changes nothing.
 				await ReplayOnHiddenInput(ImeEnd("c"));
 
 				Assert.AreEqual("", SUT.Text);
-				Assert.IsFalse(SUT.IsComposing);
 				CollectionAssert.AreEqual(new[] { "0+0 " }, ended);
 				Assert.AreEqual("|0", GetHiddenInputState());
 			}
@@ -1261,9 +1267,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 		}
 
-		// A TextChanging handler limits the length and so puts the text back when the kana composition goes past it. As with
-		// Android's LengthFilter, the input takes the TextBox's text at once and the composition ends: a conversion that
-		// would have brought it back within the limit doesn't come.
+		// A TextChanging handler limits the length and so puts the text back when the kana composition goes past it. The input
+		// takes the TextBox's text at once and the composition ends, so the keyboard builds on the text the TextBox kept: the
+		// kana is cut at the limit, and a conversion that would have brought it back within it doesn't come.
 		[TestMethod]
 		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
@@ -1305,8 +1311,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 		}
 
-		// A kana composition goes past MaxLength. As with Android's LengthFilter, the input takes the TextBox's text at once
-		// and the composition ends: a conversion that would have brought it back within MaxLength doesn't come.
+		// A kana composition goes past MaxLength. The input takes the TextBox's text at once and the composition ends, so the
+		// keyboard builds on the text the TextBox kept: the kana is cut at MaxLength, and a conversion that would have brought
+		// it back within it doesn't come.
 		[TestMethod]
 		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
@@ -1341,9 +1348,9 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 		}
 
-		// Gboard composes every word, here past MaxLength ("abcde" in a TextBox limited to 3). As with Android's LengthFilter,
-		// the input keeps the TextBox's text right after the refused update, so the keyboard builds its suggestions on "abc";
-		// the next letter is refused the same way, and one Backspace then deletes the "c".
+		// Gboard composes every word, here past MaxLength ("abcde" in a TextBox limited to 3). The input keeps the TextBox's
+		// text right after the refused update, so the keyboard builds its suggestions on "abc"; the next letter is refused the
+		// same way, and one Backspace then deletes the "c".
 		[TestMethod]
 		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
@@ -12941,7 +12948,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 		}
 
 		// Skia-Android and the browser apply the composition themselves, then sync the text. A TextChanging handler that
-		// edits that text runs within the sync, so its edit belongs to the composition and doesn't restart the IME.
+		// edits that text without changing its length (upper case) runs within the sync, so its edit belongs to the
+		// composition and doesn't restart the IME.
 		[TestMethod]
 		public async Task When_IME_Platform_Applied_Composition_Is_Edited_By_TextChanging()
 		{
@@ -13026,6 +13034,30 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 
 			Assert.AreEqual("hel", SUT.Text);
 			CollectionAssert.AreEqual(new[] { "changed 0+3 hel", "ended 0+3 hel" }, events);
+		}
+
+		// Skia Android applies a key in the middle of the text and syncs it; MaxLength refuses it. The caret stays where the
+		// edit started, as the native editable then takes the TextBox's text and caret back: the next key lands there.
+		[TestMethod]
+		public async Task When_IME_Platform_Sync_Refused_Then_Caret_Stays()
+		{
+			using var _ = new TextBoxFeatureConfigDisposable();
+			var fake = new FakeImeTextBoxExtension();
+			using var imeDisposable = TextBox.SetImeExtensionForTesting(fake);
+
+			var SUT = new TextBox { Text = "abc", MaxLength = 3 };
+			WindowHelper.WindowContent = SUT;
+			await WindowHelper.WaitForLoaded(SUT);
+			SUT.Focus(FocusState.Programmatic);
+			SUT.Select(1, 0);
+			await WindowHelper.WaitForIdle();
+
+			SUT.UpdateTextFromNative("axbc", 2, 0);
+			await WindowHelper.WaitForIdle();
+
+			Assert.AreEqual("abc", SUT.Text);
+			Assert.AreEqual(1, SUT.SelectionStart);
+			Assert.AreEqual(0, SUT.SelectionLength);
 		}
 
 		// Skia Android's editable breaks lines with \n where the TextBox stores \r: an IME that moves its composing region

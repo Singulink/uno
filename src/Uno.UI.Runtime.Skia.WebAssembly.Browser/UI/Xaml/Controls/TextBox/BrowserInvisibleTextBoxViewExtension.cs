@@ -56,12 +56,13 @@ internal partial class BrowserInvisibleTextBoxViewExtension : IOverlayTextBoxVie
 			// A multi-line TextBox's textarea breaks lines with \n where the TextBox uses \r: a text differing only
 			// by them is not an edit of the TextBox's own, which it would echo back and revert the caret for.
 			var nativeText = text.Replace('\n', '\r');
+			var textBefore = textBox.Text;
 			textBox.ApplyNativeInput(nativeText, selectionStart, selectionLength);
 
-			// The TextBox didn't keep the edit as the input applied it (MaxLength, a TextChanging filter, BeforeTextChanging,
-			// read-only). As Android's own LengthFilter does, its text goes back to the input at once, which ends the
-			// composition, so the keyboard builds its next keystrokes and suggestions on the text the TextBox kept.
-			if (textBox.Text != nativeText && WasmImeTextBoxExtension.EndRefusedComposition())
+			// The TextBox refused the edit, or kept text of another length (MaxLength, a length limit): its text goes back to
+			// the input at once, which ends the composition, so the keyboard builds its next keystrokes and suggestions on the
+			// text the TextBox kept.
+			if (TextBox.MustReturnTextToNative(textBox.Text, textBefore, nativeText) && WasmImeTextBoxExtension.EndRefusedComposition())
 			{
 				// The input got the TextBox's text back, without its caret.
 				textBox.TextBoxView.Select(textBox.SelectionStart, textBox.SelectionLength);

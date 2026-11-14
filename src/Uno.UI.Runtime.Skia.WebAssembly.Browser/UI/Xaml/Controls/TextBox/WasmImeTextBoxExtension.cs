@@ -52,9 +52,9 @@ internal sealed partial class WasmImeTextBoxExtension : IImeTextBoxExtension
 		}
 	}
 
-	// The host didn't keep an edit of the composition as the input applied it (MaxLength, a TextChanging filter, a
-	// BeforeTextChanging handler, read-only): its text goes back to the input at once instead of when the composition ends,
-	// so the keyboard's next keystrokes build on the text the host kept. Replacing the input's value ends the browser's
+	// The host refused an edit of the composition (BeforeTextChanging, read-only, MaxLength) or kept text of another length
+	// (a length limit): its text goes back to the input at once instead of when the composition ends, so the keyboard's
+	// next keystrokes build on the text the host kept. Replacing the input's value ends the browser's
 	// composition, so it ends for the host too. Returns whether one was open.
 	internal static bool EndRefusedComposition()
 	{

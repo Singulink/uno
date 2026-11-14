@@ -186,23 +186,38 @@ class TextInputConnection : BaseInputConnection
 			var selectionStart = Selection.GetSelectionStart(_editable);
 			var selectionEnd = Selection.GetSelectionEnd(_editable);
 
-			this.LogDebug()?.Debug($"EndBatchEdit: {_editable?.ToString()} ({selectionStart}->{selectionEnd})");
+			this.LogDebug()?.Debug($"EndBatchEdit: {_editable} ({selectionStart}->{selectionEnd})");
 
-			if (ActiveTextBox is not null)
+			if (ActiveTextBox is { } textBox)
 			{
-				var nativeText = _editable?.ToString() ?? string.Empty;
+				var nativeText = _editable.ToString();
+				var textBefore = _editable.TextWhenBeginBatchEdit;
 
 				// Also raises the TextCompositionChanged the TextBox held back until this text is in Text.
-				ActiveTextBox.UpdateTextFromNative(nativeText, selectionStart, selectionEnd - selectionStart);
+				textBox.UpdateTextFromNative(nativeText, selectionStart, selectionEnd - selectionStart);
+				_endingBatch = false;
 
-				// The TextBox didn't keep the edit as the IME applied it (MaxLength, a TextChanging filter, BeforeTextChanging): as
-				// Android's own LengthFilter does, the editable takes the TextBox's text at once and the composition ends, so the
-				// keyboard builds its next keystrokes and suggestions on the text the TextBox kept.
-				if (_editable is not null
-					&& !string.Equals(ActiveTextBox.Text.Replace('\r', '\n'), nativeText, StringComparison.Ordinal))
+				// The TextBox refused the IME's edit, or kept text of another length (MaxLength, a length limit): the editable
+				// takes the TextBox's text at once and the composition ends, so the keyboard builds its next keystrokes and
+				// suggestions on the text the TextBox kept. Only after the IME changed the text, and only for the TextBox it
+				// synced: the handlers that ran may have moved focus to another TextBox, or cleared it.
+				if (textBefore is not null
+					&& !string.Equals(textBefore, nativeText, StringComparison.Ordinal)
+					&& ReferenceEquals(ActiveTextBox, textBox)
+					&& TextBox.MustReturnTextToNative(textBox.Text, textBefore, nativeText))
 				{
-					_editable.SetComposingRange(-1, -1);
-					UpdateEditableSelectionAndText();
+					// One change for the listeners, with the final text: a TextCompositionEnded handler setting the text
+					// again is written afterwards (OnTextBoxTextChanged).
+					_editable.BeginBatchEdit();
+					try
+					{
+						_editable.SetComposingRange(-1, -1);
+						UpdateEditableSelectionAndText();
+					}
+					finally
+					{
+						_editable.EndBatchEdit();
+					}
 				}
 			}
 
