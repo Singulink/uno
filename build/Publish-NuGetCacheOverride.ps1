@@ -179,9 +179,13 @@ function Get-VersionFolders([string]$Filter = 'uno*') {
 
 # A filter of Uno's own package filter, minus what doesn't ship in the packages these apps use. Platform projects build per
 # platform below, with the target framework their package folder needs.
-function New-Filter([string]$Name, [string]$Source, [string[]]$Exclude) {
-	$filter = Get-Content (Join-Path $Worktree "build\filters\$Source") -Raw | ConvertFrom-Json
-	$projects = @($filter.solution.projects | Where-Object {
+# Without a source filter, the filter has the given projects.
+function New-Filter([string]$Name, [string]$Source, [string[]]$Exclude, [string[]]$Projects) {
+	if ($Source) {
+		$filter = Get-Content (Join-Path $Worktree "build\filters\$Source") -Raw | ConvertFrom-Json
+		$Projects = $filter.solution.projects
+	}
+	$projects = @($Projects | Where-Object {
 			$project = $_
 			-not ($project -like '*.netcoremobile.csproj') -and -not ($Exclude | Where-Object { $project -like $_ })
 		})
@@ -202,6 +206,8 @@ $steps = @(
 	@{ Name = 'generic'; Title = 'Skia assemblies, source generators, tasks and dev server'; Filter = @('Uno.UI-packages-generic.slnf', @()); TfmOverride = $Framework },
 	@{ Name = 'reference'; Title = 'Reference assemblies'; Filter = @('Uno.UI-packages-reference.slnf', @('Uno.Sdk\*', 'Uno.ReferenceImplComparer\*')); TfmOverride = $Framework },
 	@{ Name = 'wasm'; Title = 'WebAssembly WinRT assemblies'; Filter = @('Uno.UI-packages-wasm.slnf', @()); TfmOverride = $Framework },
+	# Skia add-ins none of Uno's package filters above have.
+	@{ Name = 'addins'; Title = 'WebGPU and OpenGL graphics and spell checking add-ins'; Filter = @('', @(), @('AddIns\Uno.WinUI.Graphics3DWebGpu\Uno.WinUI.Graphics3DWebGpu.csproj', 'AddIns\Uno.WinUI.Graphics3DGL\Uno.WinUI.Graphics3DGL.csproj', 'AddIns\Uno.WinUI.SpellChecking\Uno.WinUI.SpellChecking.csproj')); TfmOverride = $Framework },
 	@{ Name = 'android'; Title = 'Android runtime and WinRT assemblies'; Target = 'src\Uno.UI.Runtime.Android\Uno.UI.Runtime.Android.csproj'; Framework = $android; TfmOverride = $android },
 	@{ Name = 'ios-winrt'; Title = 'iOS WinRT assemblies'; Target = 'src\Uno.WinRT\Uno.WinRT.netcoremobile.csproj'; Framework = $ios; TfmOverride = "$Framework-ios" },
 	@{ Name = 'ios-runtime'; Title = 'AppleUIKit runtime'; Target = 'src\Uno.UI.Runtime.AppleUIKit\Uno.UI.Runtime.AppleUIKit.csproj'; Framework = $ios; TfmOverride = "$Framework-ios" }
@@ -255,7 +261,9 @@ if ($DryRun) {
 
 	Write-Step 'Builds'
 	foreach ($step in $steps) {
-		$target = if ($step.ContainsKey('Filter')) { "$($step.Filter[0]) without its netcoremobile projects$(if ($step.Filter[1]) { ' and ' + ($step.Filter[1] -join ', ') })" } else { $step.Target }
+		$target = if (-not $step.ContainsKey('Filter')) { $step.Target }
+		elseif (-not $step.Filter[0]) { $step.Filter[2] -join ', ' }
+		else { "$($step.Filter[0]) without its netcoremobile projects$(if ($step.Filter[1]) { ' and ' + ($step.Filter[1] -join ', ') })" }
 		$frameworkArgument = "-p:UnoTargetFrameworkOverride=$($step.TfmOverride)"
 		if ($step.ContainsKey('Framework')) { $frameworkArgument = "-f $($step.Framework) $frameworkArgument" }
 		Write-DryRun "$($step.Title): dotnet build $target -c Release $frameworkArgument -p:UnoNugetOverrideVersion=$Version"
@@ -343,7 +351,7 @@ elseif (-not $VerifyOnly) {
 
 	foreach ($step in $steps) {
 		Write-Step $step.Title
-		$target = if ($step.ContainsKey('Filter')) { New-Filter $step.Name $step.Filter[0] $step.Filter[1] } else { $step.Target }
+		$target = if ($step.ContainsKey('Filter')) { New-Filter $step.Name $step.Filter[0] $step.Filter[1] $step.Filter[2] } else { $step.Target }
 		# NuGetAudit: Uno makes audit warnings errors, so a vulnerability published after the commit (in the dev server's
 		# dependencies, say) would stop a build of the same code that built before. Upstream's own updates bring the fixes.
 		$arguments = @('build', (Join-Path $Worktree $target), '-c', 'Release', '-nologo', '-nodeReuse:false',
@@ -397,6 +405,19 @@ foreach ($folder in Get-VersionFolders) {
 					Write-Host "Removing $id\$Version\$root\$($tfmFolder.Name), which the package doesn't have"
 					Remove-Item $tfmFolder.FullName -Recurse -Force
 				}
+			}
+		}
+
+		# Files in those folders the package doesn't have: a project that ships in another package wrote them, and NuGet would
+		# hand them to apps at the next restore as this package's assets. Override markers (dot files) stay.
+		foreach ($root in 'lib', 'ref') {
+			foreach ($file in Get-ChildItem (Join-Path $folder $root) -Recurse -File -ErrorAction SilentlyContinue) {
+				if ($file.Name.StartsWith('.') -or $file.Name -like '*.inuse-*') { continue }
+				$relative = $file.FullName.Substring($folder.Length + 1).Replace('\', '/').ToLowerInvariant()
+				if ($entries.ContainsKey($relative)) { continue }
+				if ($DryRun) { Write-DryRun "would remove $id\$Version\$($file.FullName.Substring($folder.Length + 1)), which the package doesn't have"; continue }
+				Write-Host "Removing $id\$Version\$($file.FullName.Substring($folder.Length + 1)), which the package doesn't have"
+				Remove-Item $file.FullName -Force
 			}
 		}
 
