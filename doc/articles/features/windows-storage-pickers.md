@@ -22,7 +22,7 @@ The following table shows which file picker experiences are available across Uno
 | Picker         | Windows App SDK   | WebAssembly | Android | iOS    | Desktop |
 |----------------|-------|-------------|---------|--------|-------|
 | FileOpenPicker | ✔    | ✔ (1)       | ✔      | ✔      | ✔    |
-| FileSavePicker | ✔    | ✔ (1)       | ✔      | ✔ (2)  | ✔    |
+| FileSavePicker | ✔    | ✔ (1)       | ✔      | 💬 (2) | ✔    |
 | FolderPicker   | ✔    | ✔           | ✔      | ✔      | ✔    |
 
 *(1) - Multiple implementations supported - see WebAssembly section below*\
@@ -32,14 +32,13 @@ On some platforms, you can further customize the file-picking experience by util
 
 | Feature                 | Windows App SDK  | WebAssembly | Android | iOS   | Desktop |
 |-------------------------|------|-------------|---------|-------|-----|
-| SuggestedFileName       | ✔   | ✔           | ✔      | ✔     | ✔ |
+| SuggestedFileName       | ✔   | ✔           | ✖      | ✖     | ✔ |
 | SuggestedStartLocation  | ✔   | ✔ (1)       | 💬 (4) | ✔ (3) | ✔ |
 | SettingsIdentifier      | ✔   | ✔ (1)       | ✔      | ✖     | ✔ |
 | SetMultipleFilesLimit   | ✖   | ✖           | ✖      | ✔     | ✖ |
 
 *(1) - Only for the native file pickers - see WebAssembly section below*\
-*(2) - For FileOpenPicker, VideosLibrary and PicturesLibrary are used to apply `image/*` and `video/*` filters*\
-*(3) - For FileOpenPicker, PicturesLibrary opens the picture library with the image picker controller*\
+*(3) - For FileOpenPicker, PicturesLibrary and VideosLibrary open the Photos picker - see iOS section below*\
 *(4) - See Android section below*
 
 On platforms where the additional features are not supported yet, setting them will not have any effect.
@@ -196,7 +195,7 @@ var pickedFiles = await fileOpenPicker.PickMultipleFilesAsync();
 > `SuggestedStartLocation` should be set to prevent crashes on WinUI. `FileTypes` must include at least one item. You can add extensions in the format `.extension`, with the exception of `*` (asterisk), which allows picking any type of file.
 >
 > [!NOTE]
-> On iOS, the built-in image picker does not support the selection of multiple files. Therefore, we fall back to the document picker instead. However, this requires you to specify not only the `SuggestedStartLocation` set to `PicturesLibrary`, but also specify file type extensions in `FileTypeFilter` (e.g. `.jpg` and `.png`), otherwise the OS will not display the Photos app as a file provider in the picker.
+> On iOS, with `SuggestedStartLocation` set to `PicturesLibrary` or `VideosLibrary`, picking one file or several opens the Photos picker. See [Photos and videos](#photos-and-videos) in the iOS section below.
 
 ### FileSavePicker
 
@@ -227,21 +226,10 @@ else
 ```
 
 > [!NOTE]
-> The `CachedFileManager` only affects Windows, WebAssembly and iOS. For more information, see the [WebAssembly](#webassembly) and [iOS](#ios) sections below.
+> The `CachedFileManager` only affects Windows and WebAssembly. For more information, see [WebAssembly section](#webassembly) below.
 >
 > [!NOTE]
 > While the `SuggestedStartLocation` has no effect, it must be set for WinUI. You must declare at least one item for `FileTypeChoices`. Each has a description and one or more extensions.
-
-### Staged files
-
-With the WebAssembly download picker (unless `SuggestedSaveFile` is set: it then returns that file) and on iOS, the file that `PickSaveFileAsync` returns is a staged file, kept in the browser's memory or in the app's temporary directory. Its `Provider.Id` is `wasmdownloadpicker` on WebAssembly and `iosexportpicker` on iOS. `CachedFileManager.CompleteUpdatesAsync` saves it: on WebAssembly, the browser downloads it as its settings say; on iOS, the export sheet saves a copy where the user picks. Once it's saved, its content is released:
-
-* On WebAssembly, the download takes the content over. Reading the file, or completing it again without writing it again, then throws, and writing to it starts a new, empty file.
-* On iOS, the file and its folder are deleted before `CompleteUpdatesAsync` returns `Complete`. Completing it again then returns `Failed`, and opening it throws.
-
-On iOS, a file that wasn't saved stays, as the only copy of its content, so that `CompleteUpdatesAsync` can be called again: after `Incomplete`, after a cancellation and after an exception. `DeleteAsync` deletes it sooner, and the files that a run leaves are deleted the first time the next run calls `PickSaveFileAsync`. On WebAssembly, `DeleteAsync` releases content that wasn't downloaded.
-
-On the other platforms, and with the File System Access API on WebAssembly, the file is the one the user picked, so deleting it deletes the user's file.
 
 ## Picker configuration
 
@@ -287,7 +275,7 @@ In case the **File System Access API** is not available in the browser, Uno Plat
 
 For the upload picker, the browser triggers a file picker dialog and Uno Platform then copies the selected files into temporary storage of the app. The `StorageFile` instance you receive is private for your application and the changes are not reflected in the original file. To save the changes, you need to trigger the "download picker".
 
-For the download picker, the experience requires the use of [`CachedFileManager`](https://learn.microsoft.com/uwp/api/Windows.Storage.CachedFileManager). Triggering `PickSaveFileAsync` does not actually show the download picker to the user. Instead, only a temporary file is created to allow you to write any content. Afterward, calling `CompleteUpdatesAsync` opens the download dialog, which allows the user to save the file. Triggering the download releases the temporary file's content; see [Staged files](#staged-files).
+For the download picker, the experience requires the use of [`CachedFileManager`](https://learn.microsoft.com/uwp/api/Windows.Storage.CachedFileManager). Triggering `PickSaveFileAsync` does not actually show the download picker to the user. Instead, only a temporary file is created to allow you to write any content. Afterward, calling `CompleteUpdatesAsync` opens the download dialog, which allows the user to save the file.
 
 The `CachedFileManager` class works transparently with both the **Download picker** and the **File System Access API**, which means you can write a single snippet of code that handles both scenarios correctly:
 
@@ -319,34 +307,26 @@ await FileIO.WriteTextAsync(file, "Hello, world!");
 await CachedFileManager.CompleteUpdatesAsync(file);
 ```
 
-<a name="checking-whether-file-system-access-api-is-supported"></a>
+### Checking whether File System Access API is supported
 
-### Checking whether the pickers are supported
-
-The WASM specific `Uno.Storage.Pickers.FileSystemAccessApiInformation` API reports which pickers can be used in the current browser under the current `WasmConfiguration` (see [Choosing supported type of pickers](#choosing-supported-type-of-pickers)):
-
-* `IsOpenPickerSupported` - `FileOpenPicker` can pick files, with the File System Access API or the upload picker.
-* `IsSavePickerSupported` - `FileSavePicker` can pick a file, with the File System Access API or the download picker.
-* `AreFilePickersSupported` - both `FileOpenPicker` and `FileSavePicker` can pick files.
-* `IsFolderPickerSupported` - the File System Access API folder picker is available. `FolderPicker` has no other implementation.
-
-The download and upload pickers don't need the File System Access API, so with a configuration that includes them, `IsOpenPickerSupported` and `IsSavePickerSupported` are `true` in browsers without it. A picker that is not supported throws `NotSupportedException`.
+In some cases, you might want to check whether File System Access API is supported in the current runtime environment. A typical reason might be to ensure only **Save As** functionality is available to the user when the browser only supports download pickers. You can utilize the WASM specific `Uno.Storage.Pickers.FileSystemAccessApiInformation` API:
 
 ```csharp
 #if __WASM__
 if (FileSystemAccessApiInformation.IsOpenPickerSupported)
 {
-    // FileOpenPicker can pick files.
+    // File System Access API open picker is available.
 }
 
 if (FileSystemAccessApiInformation.IsSavePickerSupported)
 {
-    // FileSavePicker can pick a file.
+    // File System Access API open picker is available.
 }
 
 if (FileSystemAccessApiInformation.AreFilePickersSupported)
 {
-    // Both FileOpenPicker and FileSavePicker can pick files.
+    // Both file open and file save pickers from the
+    // File System Access API are available.
 }
 
 if (FileSystemAccessApiInformation.IsFolderPickerSupported)
@@ -355,8 +335,6 @@ if (FileSystemAccessApiInformation.IsFolderPickerSupported)
 }
 #endif
 ```
-
-Whether a picked file comes from the File System Access API or from the download/upload pickers is given by its provider, see [Checking the source of opened file](#checking-the-source-of-opened-file).
 
 ### Checking the source of opened file
 
@@ -372,14 +350,9 @@ if (file.Provider.Id == "computer")
 {
     // File is a temporary file created using Upload picker.
 }
-
-if (file.Provider.Id == "wasmdownloadpicker")
-{
-    // File was created by the Download picker.
-}
 ```
 
-The local files have a provider ID of `computer`, which matches the WinUI behavior. `jsfileaccessapi` is used for files coming from the File System Access API, and `wasmdownloadpicker` for files from the download picker.
+The local files have a provider ID of `computer`, which matches the WinUI behavior. `jsfileaccessapi` is used for files coming from the File System Access API.
 
 ### Choosing supported type of pickers
 
@@ -394,9 +367,9 @@ Uno.WinRTFeatureConfiguration.Storage.Pickers.WasmConfiguration =
 
 The allowed values for the configuration are:
 
-* `FileSystemAccessApiWithFallback` - defaults to File System Access API, but falls back to download/upload pickers if not available
-* `FileSystemAccessApi` - uses File System Access API only. If not available, pickers will throw `NotSupportedException`
-* `DownloadUpload` - uses download/upload pickers only.
+-`FileSystemAccessApiWithFallback` - defaults to File System Access API, but falls back to download/upload pickers if not available
+-`FileSystemAccessApi` - uses File System Access API only. If not available, pickers will throw `NotSupportedException`
+-`DownloadUpload` - uses download/upload pickers only.
 
 ### Security considerations
 
@@ -437,25 +410,9 @@ var result = await fileOpenPicker.PickSingleFileAsync();
 
 ## iOS
 
-No iOS picker returns a new file to write to before its content exists. Instead, as the WebAssembly download picker does with a download, `FileSavePicker` saves files through the system's export sheet, where the user picks a place in Files (such as On My iPhone or iCloud Drive):
+iOS does not offer a built-in `FileSavePicker` experience. Luckily, it is possible to implement this functionality, for example, using a combination of a `FolderPicker` and `ContentDialog`.
 
-* `PickSaveFileAsync` shows nothing and never returns `null`. It returns a new empty file, staged in a folder of its own in the app's temporary directory (see [Staged files](#staged-files)). Only that `StorageFile`, also after it is renamed or moved, presents the sheet: a `StorageFile` for the same path from `GetFileFromPathAsync` is a plain local file, for which `CompleteUpdatesAsync` returns `Complete` without saving anything.
-* The file's name is the name of `SuggestedSaveFile` if it is set, else `SuggestedFileName`, else a new GUID. `/`, `:` and control characters in it become `_`, whitespace and dots around it are removed, and it is kept within 251 bytes, so that the `.tmp` that `OpenTransactedWriteAsync` adds for its temporary file still fits the 255 bytes a name can have. Unless the name already ends with one of the `FileTypeChoices` extensions, the first one is added. Extensions with `/`, `\`, `:`, a control character or `..` are skipped. Without choices, the name's own extension is kept as one only if it is at most 16 bytes, including the dot, and has no whitespace. `SuggestedStartLocation`, `SettingsIdentifier`, `CommitButtonText` and the descriptions of the file type choices have no effect.
-* `CachedFileManager.CompleteUpdatesAsync` presents the export sheet, which saves a copy of the file to the place the user picks, as the file is on disk when the user saves it (data still buffered in an open stream isn't included). It returns:
-  * `FileUpdateStatus.Complete` when the user saved the file. The saved copy's name can differ from the file's: the user can change it in the sheet, and when they keep an existing file of the same name, the system adds a number to it.
-  * `FileUpdateStatus.Incomplete` when the user closed the sheet without saving the file, or when the app dismissed the sheet, directly or with the controller it was presented from, which UIKit does without telling the picker. It is then returned about a second after the sheet is gone, so that a save the user just finished can still come in.
-  * `FileUpdateStatus.Failed` when the file no longer exists when `CompleteUpdatesAsync` is called, for example after a save or `DeleteAsync`.
-* Cancelling the operation that `CompleteUpdatesAsync` returns closes the sheet.
-* UIKit drops the sheet's presentation, without notice, when another presentation asked for before it is still appearing (such as a document picker or the share sheet, which wait seconds for their service), or when the controller it is presented from is dismissed before it appears. `CompleteUpdatesAsync` then throws an `InvalidOperationException` once the other controller has appeared or the presenter is gone, and the file can be completed again.
-* Once the user saved the file, it is deleted with its folder before `CompleteUpdatesAsync` returns `Complete`, as the WebAssembly download picker releases its file's content (a failure to delete it is logged, and the result stays `Complete`). After anything else, the file stays, and calling `CompleteUpdatesAsync` again presents the sheet again. `DeleteAsync` deletes the file and its folder sooner. Files that are left are deleted at the app's next run, the first time it calls `PickSaveFileAsync`.
-
-The [FileSavePicker example](#filesavepicker) above works as is.
-
-### Custom save picker
-
-An app can provide its own implementation, for example, using a combination of a `FolderPicker` and `ContentDialog`. A registered implementation is used instead of the export sheet.
-
-To provide your own custom implementation, create a class that implements the `IFileSavePickerExtension`. This class must have a `public` constructor with an `object` parameter. This will actually be an instance of `FileSavePicker` when invoked later. Then implement the `PickSaveFileAsync` method:
+To provide your own custom implementation, create a class that implements the `IFileSavePickerExtension`, which is only available on iOS. This class must have a `public` constructor with an `object` parameter. This will actually be an instance of `FileSavePicker` when invoked later. Then implement the `PickSaveFileAsync` method:
 
 ```csharp
 #if __IOS__
@@ -495,3 +452,16 @@ public App()
 ```
 
 As this is quite complex, you can find a working implementation of a folder-based save file picker in [Uno.Samples repository](https://github.com/unoplatform/Uno.Samples/tree/master/UI/FileSavePickeriOS). You can modify and adjust this implementation as you see fit for your specific use case.
+
+### Photos and videos
+
+With `SuggestedStartLocation` set to `PicturesLibrary` or `VideosLibrary`, `FileOpenPicker` opens the Photos picker, for one file or several. It shows photos, videos or both, depending on the extensions in `FileTypeFilter`, but it can't hide formats the filter doesn't list, such as GIF, or HEIC (the format iPhones take photos in). When the user picks a photo or video in such a format:
+
+* If iOS can provide it in a format the filter lists, the picker returns it in that format. For example, a HEIC photo is returned as a JPEG when the filter lists `.jpg` or `.jpeg` but not `.heic`. A Live Photo is returned as its still photo, as a JPEG when the filter allows JPEG.
+* Otherwise, it is left out: `PickMultipleFilesAsync` returns the other files the user picked, and `PickSingleFileAsync` returns `null`, as when the user cancels. A warning is logged.
+
+Videos are only returned in their own file type. iPhones record `.mov` videos, so a filter that lists `.mp4` but not `.mov` leaves them out. With `*` in the filter, every photo and video is returned.
+
+The returned files are copies in the app's temporary folder, named after the photo or video in the photo library, with the extension of the format they're returned in, such as `IMG_0001.jpeg`. The picked items are loaded at the same time, each copied file by file rather than loaded into memory, so large videos can be picked, but copying them, and converting them, can take a while. An item that can't be loaded, such as a photo stored only in iCloud while the device is offline, is left out, and an error is logged.
+
+Uno Platform never deletes these copies, but iOS can delete the contents of the temporary folder while the app isn't running. Copy the files you want to keep to another folder, such as `ApplicationData.Current.LocalFolder`.
