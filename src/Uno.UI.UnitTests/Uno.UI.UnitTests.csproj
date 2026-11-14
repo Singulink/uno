@@ -135,6 +135,10 @@
 		<!-- Pure logic split out of the iOS photo picker, which needs a photo library. -->
 		<Compile Include="..\Uno.WinRT\Storage\Pickers\Internal\PhotoPickerRepresentation.iOS.cs" Link="Windows_Storage\PhotoPickerRepresentation.iOS.cs" />
 		<Compile Include="..\Uno.WinRT\Storage\Pickers\Internal\PhotoPickerType.iOS.cs" Link="Windows_Storage\PhotoPickerType.iOS.cs" />
+		<!-- Pure parsing split out of the WebAssembly WebView2 provider, so it's testable without a browser (same reason as above). -->
+		<Compile Include="..\Uno.UI.Runtime.WebAssembly.Browser\UI\Xaml\Controls\WebView\WebViewFramePermissions.cs">
+			<Link>Windows_UI_XAML_Controls\WebView2Tests\WebViewFramePermissions.cs</Link>
+		</Compile>
 	</ItemGroup>
 	<ItemGroup>
 		<!--
