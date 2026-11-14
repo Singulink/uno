@@ -193,6 +193,8 @@ function New-Filter([string]$Name, [string]$Source, [string[]]$Exclude) {
 }
 
 # The TFM folders the apps load the per-platform builds from. The API level of Android folders differs between packages.
+# Every step also sets UnoTargetFrameworkOverride: restore evaluates every target framework of the projects it reaches, and
+# -SdkVersion can't evaluate the .NET 11 ones.
 $android = "$Framework-android"
 $ios = "$Framework-ios26.0"
 
@@ -200,9 +202,9 @@ $steps = @(
 	@{ Name = 'generic'; Title = 'Skia assemblies, source generators, tasks and dev server'; Filter = @('Uno.UI-packages-generic.slnf', @()); TfmOverride = $Framework },
 	@{ Name = 'reference'; Title = 'Reference assemblies'; Filter = @('Uno.UI-packages-reference.slnf', @('Uno.Sdk\*', 'Uno.ReferenceImplComparer\*')); TfmOverride = $Framework },
 	@{ Name = 'wasm'; Title = 'WebAssembly WinRT assemblies'; Filter = @('Uno.UI-packages-wasm.slnf', @()); TfmOverride = $Framework },
-	@{ Name = 'android'; Title = 'Android runtime and WinRT assemblies'; Target = 'src\Uno.UI.Runtime.Android\Uno.UI.Runtime.Android.csproj'; Framework = $android },
-	@{ Name = 'ios-winrt'; Title = 'iOS WinRT assemblies'; Target = 'src\Uno.WinRT\Uno.WinRT.netcoremobile.csproj'; Framework = $ios },
-	@{ Name = 'ios-runtime'; Title = 'AppleUIKit runtime'; Target = 'src\Uno.UI.Runtime.AppleUIKit\Uno.UI.Runtime.AppleUIKit.csproj'; Framework = $ios }
+	@{ Name = 'android'; Title = 'Android runtime and WinRT assemblies'; Target = 'src\Uno.UI.Runtime.Android\Uno.UI.Runtime.Android.csproj'; Framework = $android; TfmOverride = $android },
+	@{ Name = 'ios-winrt'; Title = 'iOS WinRT assemblies'; Target = 'src\Uno.WinRT\Uno.WinRT.netcoremobile.csproj'; Framework = $ios; TfmOverride = "$Framework-ios" },
+	@{ Name = 'ios-runtime'; Title = 'AppleUIKit runtime'; Target = 'src\Uno.UI.Runtime.AppleUIKit\Uno.UI.Runtime.AppleUIKit.csproj'; Framework = $ios; TfmOverride = "$Framework-ios" }
 )
 
 # Folders those apps load Uno assemblies from. '*' applies to every package; a folder may hold a wildcard.
@@ -254,7 +256,8 @@ if ($DryRun) {
 	Write-Step 'Builds'
 	foreach ($step in $steps) {
 		$target = if ($step.ContainsKey('Filter')) { "$($step.Filter[0]) without its netcoremobile projects$(if ($step.Filter[1]) { ' and ' + ($step.Filter[1] -join ', ') })" } else { $step.Target }
-		$frameworkArgument = if ($step.ContainsKey('Framework')) { "-f $($step.Framework)" } else { "-p:UnoTargetFrameworkOverride=$($step.TfmOverride)" }
+		$frameworkArgument = "-p:UnoTargetFrameworkOverride=$($step.TfmOverride)"
+		if ($step.ContainsKey('Framework')) { $frameworkArgument = "-f $($step.Framework) $frameworkArgument" }
 		Write-DryRun "$($step.Title): dotnet build $target -c Release $frameworkArgument -p:UnoNugetOverrideVersion=$Version"
 	}
 
