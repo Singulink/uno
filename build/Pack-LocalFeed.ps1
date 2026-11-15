@@ -18,7 +18,6 @@ param(
 	[Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$')][string]$Version,
 	[Parameter(Mandatory)][string]$Feed,
 	[string]$MacNativeDir = "$env:USERPROFILE\.nuget\packages\uno.winui.runtime.macos\7.1.0-dev.173\runtimes\osx\native",
-	[switch]$SkipWindows,
 	[switch]$PackOnly
 )
 
@@ -67,10 +66,9 @@ try {
 
 			Invoke-Step 'Build packages' { dotnet build build\filters\Uno.UI-packages-all.slnf -nologo -v:m @props "-bl:$log\all.binlog" }
 
-			if (-not $SkipWindows) {
-				$msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-				Invoke-Step 'Build Windows packages' { & $msbuild build\filters\Uno.UI-packages-windows.slnf -nologo -r -m -v:m @props -p:BuildGraphics3DGLForWindows=true -p:UNO_DISABLE_ANALYZERS_IN_SAMPLES=true "-bl:$log\windows.binlog" }
-			}
+			# The WinAppSDK assets need Visual Studio's MSBuild, as on CI.
+			$msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+			Invoke-Step 'Build Windows packages' { & $msbuild build\filters\Uno.UI-packages-windows.slnf -nologo -r -m -v:m @props -p:BuildGraphics3DGLForWindows=true -p:UNO_DISABLE_ANALYZERS_IN_SAMPLES=true "-bl:$log\windows.binlog" }
 		}
 
 		Invoke-Step 'Provision natives' {
