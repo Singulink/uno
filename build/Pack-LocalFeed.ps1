@@ -95,7 +95,8 @@ try {
 			}
 		}
 
-		Invoke-Step 'Pack Uno.Sdk' { dotnet pack src\Uno.Sdk\Uno.Sdk.csproj -nologo -v:m @props -p:PackageId=Uno.Sdk }
+		# Built, not `dotnet pack`ed: its files are staged by build targets that a pack of this GeneratePackageOnBuild project skips.
+		Invoke-Step 'Pack Uno.Sdk' { dotnet build src\Uno.Sdk\Uno.Sdk.csproj -nologo -v:m @props -p:PackageId=Uno.Sdk }
 	}
 	finally {
 		# Put back what Prepare rewrote.
