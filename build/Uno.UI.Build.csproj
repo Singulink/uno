@@ -58,6 +58,8 @@
 			<_Sha1Replace Include="..\src\SourceGenerators\Uno.UI.Tasks\AssemblyName.props" />
 			<_Sha1Replace Include="..\src\SourceGenerators\Uno.UI.Tasks\Content\Uno.UI.Tasks*.*" />
 			<_Sha1Replace Include="..\src\Uno.Sdk\**\*" />
+			<!-- Outside a clean CI checkout, bin and obj hold build outputs hard-linked to the NuGet cache: rewriting them corrupts it. -->
+			<_Sha1Replace Remove="..\src\**\bin\**;..\src\**\obj\**" />
 		</ItemGroup>
 
 		<!-- A packaged MSBuild file outside the list above keeps its _v0 names while the assemblies they point to are
