@@ -61,6 +61,12 @@
 	</Target>
 
 	<Target Name="ReplacePackageVersion" BeforeTargets="CoreCompile" AfterTargets="CopySdkFiles">
+		<PropertyGroup>
+			<!-- Packed as Uno.Sdk itself (-p:PackageId=Uno.Sdk), the SDK's own version is the package version. -->
+			<_UnoSdkVersionStamp>$(PackageVersion)-Private</_UnoSdkVersionStamp>
+			<_UnoSdkVersionStamp Condition="'$(PackageId)' == 'Uno.Sdk'">$(PackageVersion)</_UnoSdkVersionStamp>
+		</PropertyGroup>
+
 		<ItemGroup>
 			<_IntermediateSdkFile Include="$(IntermediateOutputPath)Sdk\*.props;$(IntermediateOutputPath)Sdk\*.targets" />
 			<_IntermediateTargetFile Include="$(IntermediateOutputPath)targets\*.props;$(IntermediateOutputPath)targets\*.targets" />
@@ -90,22 +96,22 @@
 		<ReplaceFileText
 			Filename="%(_IntermediateSdkFile.Identity)"
 			MatchExpression="DefaultUnoSdkVersion"
-			ReplacementText="$(PackageVersion)-Private" />
+			ReplacementText="$(_UnoSdkVersionStamp)" />
 
 		<ReplaceFileText
 			Filename="%(_IntermediateTargetFile.Identity)"
 			MatchExpression="DefaultUnoSdkVersion"
-			ReplacementText="$(PackageVersion)-Private" />
+			ReplacementText="$(_UnoSdkVersionStamp)" />
 
 		<ReplaceFileText
 			Filename="%(_PackageManifestPackFile.Identity)"
 			MatchExpression="DefaultUnoSdkVersion"
-			ReplacementText="$(PackageVersion)-Private" />
+			ReplacementText="$(_UnoSdkVersionStamp)" />
 
 		<ReplaceFileText
 			Filename="%(_TemporaryCodeFile.Identity)"
 			MatchExpression="DefaultUnoSdkVersion"
-			ReplacementText="$(PackageVersion)-Private" />
+			ReplacementText="$(_UnoSdkVersionStamp)" />
 
 		<ItemGroup>
 			<None Include="@(_PackageManifestPackFile)" Pack="true" PackagePath="targets\$(TargetFramework)\%(Filename)%(Extension)" />
