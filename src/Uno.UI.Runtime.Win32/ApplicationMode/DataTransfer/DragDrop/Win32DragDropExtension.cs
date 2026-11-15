@@ -37,7 +37,10 @@ internal partial class Win32DragDropExtension : IDragDropExtension, IDropTarget.
 	private readonly HWND _hwnd;
 	private readonly ComScope<IDropTarget> _dropTarget;
 
+	private static readonly List<string> _virtualFileDirectories = new();
+
 	private AsyncHDropHandler? _lastAsyncHDropHandler;
+	private VirtualFilesHandler? _lastVirtualFilesHandler;
 
 	// The shell's drag-image manager and the drag's data object, from DragEnter to DragLeave or Drop. The manager is apartment-threaded:
 	// it's created, used and released on the UI thread, where OLE calls this drop target.
@@ -106,6 +109,30 @@ internal partial class Win32DragDropExtension : IDragDropExtension, IDropTarget.
 		catch (Exception error) when (error is not OutOfMemoryException and not StackOverflowException and not AccessViolationException)
 		{
 			completion.TrySetException(error);
+		}
+	}
+
+	// Virtual files (FileGroupDescriptorW and FileContents with no CF_HDROP: Outlook attachments, items in a zip folder...)
+	// only exist as data, so an accepted drop copies them to disk, while the source still serves them.
+	private sealed class VirtualFilesHandler(FORMATETC descriptorFormat)
+	{
+		private readonly TaskCompletionSource<List<IStorageItem>> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public async Task<object> GetStorageItemsAsync(CancellationToken ct) => await _tcs.Task;
+
+		public void Cancel() => _tcs.TrySetException(new InvalidOperationException("The dragged files weren't dropped."));
+
+		public unsafe void Drop(Win32DragDropExtension owner, IDataObject* dataObject)
+		{
+			try
+			{
+				_tcs.TrySetResult(owner.ReadVirtualFiles(dataObject, descriptorFormat));
+			}
+			catch (Exception error) when (error is not OutOfMemoryException and not StackOverflowException and not AccessViolationException)
+			{
+				owner.LogError()?.Error("Failed to copy the dragged files.", error);
+				_tcs.TrySetException(error);
+			}
 		}
 	}
 
