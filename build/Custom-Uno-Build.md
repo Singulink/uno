@@ -30,7 +30,7 @@ git log --no-merges --oneline upstream/master..custom/7
 - .NET SDK 11.0.100 or later. The packaging needs .NET 11, as Uno's CI does, and builds the .NET 11 and .NET 10 assets.
 - The workloads: `dotnet workload install android ios maccatalyst tvos wasm-tools`.
 - The Android SDK platform for API 37 (`platforms\android-37.0`), from Visual Studio's Android SDK manager.
-- JDK 21, with `JAVA_HOME` pointing at it (for example `C:\Program Files\Android\openjdk\jdk-21.0.8`).
+- JDK 21, with `JAVA_HOME` pointing at it (`winget install Microsoft.OpenJDK.21` installs one and sets it).
 - No Mac. The macOS native library can't be built on Windows, so the script takes it from the official `Uno.WinUI.Runtime.MacOS` package in the NuGet cache (`-MacNativeDir`).
 - Clone the fork on `custom/7`:
 
