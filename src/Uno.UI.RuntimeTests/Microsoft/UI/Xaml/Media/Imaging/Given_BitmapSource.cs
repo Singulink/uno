@@ -435,11 +435,13 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Media_Imaging
 			Assert.AreEqual(width, sut.PixelWidth);
 			Assert.AreEqual(height, sut.PixelHeight);
 			Assert.AreEqual(0, codec.Decodes);
-			Assert.IsTrue(inner.TryDecode(new MemoryStream(bytes), null, null, out var frames));
+			var decoded = inner.TryDecode(new MemoryStream(bytes), null, null, out var frames);
 			using (frames)
 			{
-				Assert.AreEqual(width, frames.Frames[0].PixelWidth);
-				Assert.AreEqual(height, frames.Frames[0].PixelHeight);
+				// A width of 0 is a row for a file the codec declines to decode.
+				Assert.AreEqual(width != 0, decoded, "The size should be read for the images the codec decodes.");
+				Assert.AreEqual(width, decoded ? frames.Frames[0].PixelWidth : 0);
+				Assert.AreEqual(height, decoded ? frames.Frames[0].PixelHeight : 0);
 			}
 		}
 #endif
