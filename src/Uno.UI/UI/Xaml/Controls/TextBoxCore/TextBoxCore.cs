@@ -802,6 +802,7 @@ internal sealed partial class TextBoxCore
 			if (isCoercingInput)
 			{
 				_wasInputCancelled = true;
+				_textInputRefused = true;
 			}
 
 #if __SKIA__
