@@ -692,8 +692,8 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 			}
 		}
 
-		// A refused update changes no text, which still has to end the platform's text apply. The refusal ends the composition
-		// and gives the input the TextBox's text back at once, so the next change from code is a plain outside change.
+		// A refused update changes no text, which still has to end the platform's text apply: the next change from code is an
+		// outside change that ends the composition.
 		[TestMethod]
 		[RunsOnUIThread]
 		[PlatformCondition(ConditionMode.Include, RuntimeTestPlatforms.SkiaWasm)]
@@ -709,12 +709,12 @@ namespace Uno.UI.RuntimeTests.Tests.Windows_UI_Xaml_Controls
 				await ReplayOnHiddenInput(ImeCompose(0, 0, "hel", "hel", 3));
 				await ReplayOnHiddenInput(ImeCompose(0, 3, "hell", "hell", 4));
 				Assert.AreEqual("hel", SUT.Text);
-				Assert.AreEqual(1, ended, "the refusal ends the composition");
+				Assert.AreEqual(0, ended);
 
 				SUT.Text = "XY";
 				await WindowHelper.WaitForIdle();
 
-				Assert.AreEqual(1, ended, "no composition is left to end");
+				Assert.AreEqual(1, ended);
 				Assert.AreEqual("XY", SUT.Text);
 				Assert.AreEqual("XY", GetHiddenInputState().Split('|')[0]);
 			}
