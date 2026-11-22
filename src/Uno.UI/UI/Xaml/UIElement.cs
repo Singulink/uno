@@ -1330,6 +1330,23 @@ namespace Microsoft.UI.Xaml
 #endif
 		}
 
+		// Does a layout round, except only rounds down.
+		internal double LayoutRoundFloor(double value)
+		{
+#if __SKIA__
+			if (!double.IsFinite(value))
+			{
+				return value;
+			}
+
+			double scaleFactor = GetScaleFactorForLayoutRounding();
+
+			return Math.Floor(value * scaleFactor) / scaleFactor;
+#else
+			return value;
+#endif
+		}
+
 		internal Rect LayoutRound(Rect value)
 		{
 #if __SKIA__
