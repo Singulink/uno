@@ -247,8 +247,10 @@ namespace Uno.UI.Runtime.Android
 				nativelyHandled = base.DispatchTouchEvent(ev);
 			}
 
+			OnTouchEventDispatching(ev);
 			_renderViewAsView?.GetLocationInWindow(_locationInWindow);
 			Wrapper.PointerSource.OnNativeMotionEvent(ev, _locationInWindow, nativelyHandled);
+			OnTouchEventDispatched(ev);
 
 			// As the AndroidCorePointerInputSource can dispatch event asynchronously, we always return true to prevent the system from dispatching the event
 			// as we assume that anyway we are the fully opaque (i.e. the pointer should not be dispatch to any element under this current ApplicationActivity).
@@ -572,6 +574,9 @@ namespace Uno.UI.Runtime.Android
 			// The base deactivates the window, and PopupRoot dismisses the light dismiss popups for that.
 			base.OnPause();
 
+			// A swipe that took the app away (home, recents) ends without a Back.
+			ClearGestureBack();
+
 			DismissKeyboard();
 		}
 
@@ -645,7 +650,7 @@ namespace Uno.UI.Runtime.Android
 #pragma warning disable CS0672 // deprecated members
 		public override void OnBackPressed()
 		{
-			var handled = global::Windows.UI.Core.SystemNavigationManager.GetForCurrentView().RequestBack();
+			var handled = RequestBack();
 			if (!handled)
 			{
 #pragma warning disable CA1422 // Validate platform compatibility
