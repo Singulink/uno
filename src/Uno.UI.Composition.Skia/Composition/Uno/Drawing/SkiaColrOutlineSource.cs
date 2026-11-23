@@ -18,6 +18,7 @@ internal sealed class SkiaColrOutlineSource
 	private static readonly uint _colrTag = SkiaFontFace.Tag("COLR");
 	private static readonly uint _cpalTag = SkiaFontFace.Tag("CPAL");
 	private static readonly uint _dsigTag = SkiaFontFace.Tag("DSIG");
+	private static readonly uint _headTag = SkiaFontFace.Tag("head");
 	private static readonly uint _cffTag = SkiaFontFace.Tag("CFF ");
 	private static readonly uint _cff2Tag = SkiaFontFace.Tag("CFF2");
 	private static readonly uint _ottoTag = SkiaFontFace.Tag("OTTO");
@@ -34,7 +35,7 @@ internal sealed class SkiaColrOutlineSource
 	/// <summary>The font without its COLR and CPAL tables, for the outlines of its plain glyphs.</summary>
 	public SKTypeface Typeface { get; }
 
-	/// <summary>Whether COLR colours <paramref name="glyph"/>, which then has no plain outline.</summary>
+	/// <summary>Whether COLR colours <paramref name="glyph"/>, so it draws as a colour glyph rather than from its outline.</summary>
 	public bool IsColorGlyph(ushort glyph) => (_colorGlyphs[glyph >> 6] & (1UL << (glyph & 63))) != 0;
 
 	/// <summary>Creates the outline source for <paramref name="typeface"/>.</summary>
@@ -73,8 +74,7 @@ internal sealed class SkiaColrOutlineSource
 		var glyphs = new ulong[(ushort.MaxValue + 1) / 64];
 
 		// v0 BaseGlyphRecord: glyph id, first layer index, layer count.
-		var baseGlyphCount = BinaryPrimitives.ReadUInt16BigEndian(header[2..]);
-		if (baseGlyphCount > 0 && !MarkGlyphs(typeface, size, BinaryPrimitives.ReadUInt32BigEndian(header[4..]), baseGlyphCount, glyphs))
+		if (!MarkGlyphs(typeface, size, BinaryPrimitives.ReadUInt32BigEndian(header[4..]), BinaryPrimitives.ReadUInt16BigEndian(header[2..]), glyphs))
 		{
 			return null;
 		}
@@ -96,6 +96,12 @@ internal sealed class SkiaColrOutlineSource
 	// Marks the glyph ids of `count` 6-byte records that start with one, at `offset` in COLR.
 	private static bool MarkGlyphs(SKTypeface typeface, long tableSize, long offset, long count, ulong[] glyphs)
 	{
+		// No records to read (TryGetTableData fails for a length of 0).
+		if (count == 0)
+		{
+			return true;
+		}
+
 		var length = count * 6;
 		if (offset + length > tableSize)
 		{
@@ -171,7 +177,7 @@ internal sealed class SkiaColrOutlineSource
 			BinaryPrimitives.WriteUInt16BigEndian(sfnt[8..], (ushort)entrySelector);
 			BinaryPrimitives.WriteUInt16BigEndian(sfnt[10..], (ushort)(count * 16 - searchRange));
 
-			// head.checkSumAdjustment stays the original's: CoreText doesn't validate it.
+			// head's checksum counts its checkSumAdjustment as 0. The adjustment itself stays the original's: CoreText doesn't validate it.
 			var offset = directorySize;
 			for (var i = 0; i < count; i++)
 			{
@@ -182,9 +188,15 @@ internal sealed class SkiaColrOutlineSource
 					return null;
 				}
 
+				var checksum = Checksum(table);
+				if (tags[i] == _headTag && sizes[i] >= 12)
+				{
+					checksum -= BinaryPrimitives.ReadUInt32BigEndian(table[8..]);
+				}
+
 				var record = sfnt[(12 + 16 * i)..];
 				BinaryPrimitives.WriteUInt32BigEndian(record, tags[i]);
-				BinaryPrimitives.WriteUInt32BigEndian(record[4..], Checksum(table));
+				BinaryPrimitives.WriteUInt32BigEndian(record[4..], checksum);
 				BinaryPrimitives.WriteUInt32BigEndian(record[8..], (uint)offset);
 				BinaryPrimitives.WriteUInt32BigEndian(record[12..], (uint)sizes[i]);
 				offset += table.Length;
@@ -196,7 +208,8 @@ internal sealed class SkiaColrOutlineSource
 			return null;
 		}
 
-		// CoreText sets the optical size from the text size, so opsz stays free like on the original (see ApplyVariableFontAxes).
+		// CoreText sets the optical size from the text size unless opsz is set explicitly. Font creation never sets it on the original
+		// (it leaves opsz at its default), so to keep that, the copy takes the original's variation position except opsz.
 		if (typeface.VariationDesignPosition is { Length: > 0 } position
 			&& Array.FindAll(position, c => c.Axis != _opszTag) is { Length: > 0 } axes)
 		{

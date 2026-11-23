@@ -231,17 +231,7 @@ internal sealed class SkiaFont : IFont
 	}
 
 	private SKPath? GetPlainGlyphPathFromCopyWithoutColr(SkiaColrOutlineSource source, ushort glyph)
-	{
-		if (_colrOutlineFont is null)
-		{
-			_colrOutlineFont = SkiaFontProvider.CreateSKFont(source.Typeface, _font.Size);
-			_colrOutlineFont.ScaleX = _font.ScaleX;
-			_colrOutlineFont.SkewX = _font.SkewX;
-			_colrOutlineFont.Embolden = _font.Embolden;
-		}
-
-		return _colrOutlineFont.GetGlyphPath(glyph);
-	}
+		=> (_colrOutlineFont ??= SkiaFontProvider.CreateSKFont(source.Typeface, _font.Size)).GetGlyphPath(glyph);
 
 	// Replays cached glyph-local pen ops into a neutral IPathBuilder, translated to the pen position.
 	private static void ReplayTranslated(IPathBuilder builder, PenOp[] ops, float dx, float dy)
