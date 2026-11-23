@@ -1,7 +1,7 @@
 ﻿> [!IMPORTANT]
 > **This is Singulink's custom build of Uno Platform 7, not the official Uno repository.**
 >
-> Branch `custom/7` is Uno's `master` with the commits of our open pull requests to Uno. We pack it with Uno's own packaging as `7.1.0-singulink.N` into a local NuGet feed, and apps reference that version through `Uno.Sdk` in their `global.json`. See the [guide](build/Custom-Uno-Build.md) for how to set up a machine, pack the build and work on it.
+> Branch `custom/7` is Uno's `master` with the commits of our open pull requests to Uno. We pack it with Uno's own packaging as `7.1.0-singulink.N` and publish it to the NuGet feed `https://nuget.singulink.com/index.json`, and apps reference that version through `Uno.Sdk` in their `global.json`. See the [guide](build/Custom-Uno-Build.md) for how to use the feed, pack the build yourself and work on it.
 >
 > For Uno Platform itself, go to [unoplatform/uno](https://github.com/unoplatform/uno).
 

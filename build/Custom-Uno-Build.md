@@ -1,10 +1,11 @@
 # Using the custom Uno 7 build
 
-Our apps run on a custom build of Uno Platform 7. It contains fixes they need that Uno hasn't released yet. We pack it with Uno's own packaging under our own version, `7.1.0-singulink.N`, into a local NuGet feed, and the apps reference that version.
+Our apps run on a custom build of Uno Platform 7. It contains fixes they need that Uno hasn't released yet. We pack it with Uno's own packaging under our own version, `7.1.0-singulink.N`, publish it to a public NuGet feed, and the apps reference that version.
 
 - **Repository:** <https://github.com/Singulink/uno>, a public fork of [unoplatform/uno](https://github.com/unoplatform/uno)
 - **Branch:** `custom/7`
 - **Based on:** Uno's `master` at `46ea872727`, plus our pull requests to Uno that it hasn't merged yet.
+- **NuGet feed:** `https://nuget.singulink.com/index.json`
 - **Pack script:** [`build/Pack-LocalFeed.ps1`](Pack-LocalFeed.ps1)
 
 ## How the branch is made
@@ -59,9 +60,23 @@ Each app's `global.json` pins our version:
 }
 ```
 
-The feed has to be a NuGet source, in the user `NuGet.Config` (`%AppData%\NuGet\NuGet.Config`) or the app's `nuget.config`. Every machine that builds the apps, including a build server, needs the packages in a feed it can reach.
+The packages are on a public NuGet feed, `https://nuget.singulink.com/index.json`, which needs no account or key. Each app's `nuget.config` lists it next to nuget.org, so the app restores the same way on every machine, build servers included:
 
-The apps then restore our packages from the feed into the normal NuGet cache, like any other package. Nothing on the machine is overwritten, and clearing the cache is harmless.
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+    <add key="singulink-uno" value="https://nuget.singulink.com/index.json" />
+  </packageSources>
+</configuration>
+```
+
+- **Don't map `Uno.*` to the feed** with package source mapping. The feed has only the packages this repository builds; Uno's others (Uno.Toolkit, Uno.Extensions, Uno.Resizetizer and so on) still come from nuget.org.
+- **Versions on the feed** are listed at `https://nuget.singulink.com/flatcontainer/uno.winui/index.json`. A published version never changes.
+- **Trying a pack of your own:** pack into a local folder, add that folder as another package source in your user `NuGet.Config` (`%AppData%\NuGet\NuGet.Config`), so the app's `nuget.config` stays as is, and use an `N` that isn't on the feed.
+
+The apps restore our packages into the normal NuGet cache, like any other package. Nothing on the machine is overwritten, and clearing the cache is harmless.
 
 ## Working on the branch
 
@@ -88,6 +103,7 @@ The apps then restore our packages from the feed into the normal NuGet cache, li
 | --- | --- |
 | `Packing needs the .NET 11 SDK, as on CI.` | A `global.json` pins an older SDK. Install .NET 11 and check the repository's `global.json`, including a locally edited one. |
 | `<feed> already has <version> packages` | Bump `N`. |
+| Restore can't find `Uno.Sdk` or another Uno package at `7.1.0-singulink.N` (`NU1101`, `NU1102`, or an SDK resolver error) | The app's `nuget.config` doesn't list the feed, or that version isn't on it. |
 | `Commit or stash first` | Commit or stash your changes to tracked files. |
 | `XA5207: Could not find android.jar for API level 37.0` | Install the Android SDK platform for API 37. |
 | Restore fails with `NU1902`/`NU1903` | NuGet's vulnerability audit; Uno treats its warnings as errors. Pass `-p:NuGetAudit=false` for a dev build. |
